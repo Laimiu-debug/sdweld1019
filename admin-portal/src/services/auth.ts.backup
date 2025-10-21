@@ -1,0 +1,158 @@
+import { message } from 'antd';
+import apiService from './api';
+
+export interface LoginCredentials {
+  username: string;
+  password: string;
+}
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  email: string;
+  full_name: string;
+  is_admin: boolean;
+  admin_level: string;
+  permissions: string[];
+}
+
+class AuthService {
+  private static instance: AuthService;
+  private currentUser: AuthUser | null = null;
+
+  static getInstance(): AuthService {
+    if (!AuthService.instance) {
+      AuthService.instance = new AuthService();
+    }
+    return AuthService.instance;
+  }
+
+  async login(credentials: LoginCredentials): Promise<boolean> {
+    try {
+      const response = await apiService.post('/auth/login', credentials);
+
+      if (response.success && response.data) {
+        const { token, user } = response.data;
+
+        // 保存 token
+        localStorage.setItem('admin_token', token);
+
+        // 保存用户信息
+        this.currentUser = user;
+        localStorage.setItem('admin_user', JSON.stringify(user));
+
+        return true;
+      }
+
+      return false;
+    } catch (error: any) {
+      message.error(error.response?.data?.message || '登录失败');
+      return false;
+    }
+  }
+
+  async logout(): Promise<void> {
+    try {
+      await apiService.post('/auth/logout');
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      this.clearAuth();
+    }
+  }
+
+  async refreshToken(): Promise<boolean> {
+    try {
+      const response = await apiService.post('/auth/refresh');
+
+      if (response.success && response.data?.token) {
+        localStorage.setItem('admin_token', response.data.token);
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      this.clearAuth();
+      return false;
+    }
+  }
+
+  getCurrentUser(): AuthUser | null {
+    if (!this.currentUser) {
+      const storedUser = localStorage.getItem('admin_user');
+      if (storedUser) {
+        try {
+          this.currentUser = JSON.parse(storedUser);
+        } catch (error) {
+          this.clearAuth();
+        }
+      }
+    }
+    return this.currentUser;
+  }
+
+  isAuthenticated(): boolean {
+    const token = localStorage.getItem('admin_token');
+    const user = this.getCurrentUser();
+    return !!(token && user && user.is_admin);
+  }
+
+  hasPermission(permission: string): boolean {
+    const user = this.getCurrentUser();
+    return user ? user.permissions.includes(permission) || user.admin_level === 'super_admin' : false;
+  }
+
+  hasAnyPermission(permissions: string[]): boolean {
+    const user = this.getCurrentUser();
+    if (!user) return false;
+
+    if (user.admin_level === 'super_admin') return true;
+
+    return permissions.some(permission => user.permissions.includes(permission));
+  }
+
+  clearAuth(): void {
+    localStorage.removeItem('admin_token');
+    localStorage.removeItem('admin_user');
+    this.currentUser = null;
+  }
+
+  async updateProfile(userData: Partial<AuthUser>): Promise<boolean> {
+    try {
+      const response = await apiService.put('/auth/profile', userData);
+
+      if (response.success && response.data) {
+        this.currentUser = { ...this.currentUser!, ...response.data };
+        localStorage.setItem('admin_user', JSON.stringify(this.currentUser));
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      message.error('更新个人信息失败');
+      return false;
+    }
+  }
+
+  async changePassword(oldPassword: string, newPassword: string): Promise<boolean> {
+    try {
+      const response = await apiService.post('/auth/change-password', {
+        old_password: oldPassword,
+        new_password: newPassword,
+      });
+
+      if (response.success) {
+        message.success('密码修改成功');
+        return true;
+      }
+
+      return false;
+    } catch (error: any) {
+      message.error(error.response?.data?.message || '密码修改失败');
+      return false;
+    }
+  }
+}
+
+export const authService = AuthService.getInstance();
+export default authService;

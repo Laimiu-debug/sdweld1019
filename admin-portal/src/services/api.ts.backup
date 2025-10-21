@@ -1,0 +1,240 @@
+import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
+import { message } from 'antd';
+
+class ApiService {
+  private api: AxiosInstance;
+
+  constructor() {
+    this.api = axios.create({
+      baseURL: '/api/v1/admin',
+      timeout: 30000,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    this.setupInterceptors();
+  }
+
+  private setupInterceptors() {
+    // 请求拦截器
+    this.api.interceptors.request.use(
+      (config) => {
+        const token = localStorage.getItem('admin_token');
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
+        }
+        return config;
+      },
+      (error) => {
+        return Promise.reject(error);
+      }
+    );
+
+    // 响应拦截器
+    this.api.interceptors.response.use(
+      (response) => {
+        return response.data;
+      },
+      (error) => {
+        const { response } = error;
+
+        if (response) {
+          switch (response.status) {
+            case 401:
+              message.error('登录已过期，请重新登录');
+              localStorage.removeItem('admin_token');
+              window.location.href = '/login';
+              break;
+            case 403:
+              message.error('权限不足');
+              break;
+            case 404:
+              message.error('请求的资源不存在');
+              break;
+            case 500:
+              message.error('服务器内部错误');
+              break;
+            default:
+              message.error(response.data?.message || '请求失败');
+          }
+        } else {
+          message.error('网络连接失败');
+        }
+
+        return Promise.reject(error);
+      }
+    );
+  }
+
+  // 用户管理
+  async getUsers(params: any) {
+    return this.api.get('/users', { params });
+  }
+
+  async getUserDetail(userId: string) {
+    return this.api.get(`/users/${userId}`);
+  }
+
+  async adjustUserMembership(userId: string, data: any) {
+    return this.api.post(`/users/${userId}/adjust-membership`, data);
+  }
+
+  async toggleUserStatus(userId: string, isActive: boolean, reason?: string) {
+    return this.api.post(`/users/${userId}/${isActive ? 'enable' : 'disable'}`, {
+      reason,
+    });
+  }
+
+  async deleteUser(userId: string) {
+    return this.api.delete(`/users/${userId}`);
+  }
+
+  // 企业管理
+  async getEnterprises(params: any) {
+    return this.api.get('/enterprises', { params });
+  }
+
+  async getEnterpriseDetail(enterpriseId: string) {
+    return this.api.get(`/enterprises/${enterpriseId}`);
+  }
+
+  async verifyEnterprise(enterpriseId: string, verified: boolean, reason?: string) {
+    return this.api.post(`/enterprises/${enterpriseId}/verify`, {
+      verified,
+      reason,
+    });
+  }
+
+  async toggleEnterpriseStatus(enterpriseId: string, isActive: boolean, reason?: string) {
+    return this.api.post(`/enterprises/${enterpriseId}/${isActive ? 'enable' : 'disable'}`, {
+      reason,
+    });
+  }
+
+  // 订阅管理
+  async getSubscriptions(params: any) {
+    return this.api.get('/subscriptions', { params });
+  }
+
+  async getSubscriptionDetail(subscriptionId: string) {
+    return this.api.get(`/subscriptions/${subscriptionId}`);
+  }
+
+  async adjustSubscription(subscriptionId: string, data: any) {
+    return this.api.post(`/subscriptions/${subscriptionId}/adjust`, data);
+  }
+
+  async cancelSubscription(subscriptionId: string, reason: string) {
+    return this.api.post(`/subscriptions/${subscriptionId}/cancel`, {
+      reason,
+    });
+  }
+
+  // 系统监控
+  async getSystemStatus() {
+    return this.api.get('/system/status');
+  }
+
+  async getSystemLogs(params: any) {
+    return this.api.get('/logs', { params });
+  }
+
+  async getErrorLogs(params: any) {
+    return this.api.get('/logs/errors', { params });
+  }
+
+  async getAccessLogs(params: any) {
+    return this.api.get('/logs/access', { params });
+  }
+
+  // 数据统计
+  async getUserStatistics(params: any) {
+    return this.api.get('/statistics/users', { params });
+  }
+
+  async getSubscriptionStatistics(params: any) {
+    return this.api.get('/statistics/subscriptions', { params });
+  }
+
+  async getUsageStatistics(params: any) {
+    return this.api.get('/statistics/usage', { params });
+  }
+
+  async getPerformanceStatistics(params: any) {
+    return this.api.get('/statistics/performance', { params });
+  }
+
+  // 系统配置
+  async getSystemConfig() {
+    return this.api.get('/config');
+  }
+
+  async updateSystemConfig(config: any) {
+    return this.api.put('/config', config);
+  }
+
+  // 公告管理
+  async getAnnouncements(params: any) {
+    return this.api.get('/announcements', { params });
+  }
+
+  async createAnnouncement(data: any) {
+    return this.api.post('/announcements', data);
+  }
+
+  async updateAnnouncement(id: string, data: any) {
+    return this.api.put(`/announcements/${id}`, data);
+  }
+
+  async publishAnnouncement(id: string) {
+    return this.api.post(`/announcements/${id}/publish`);
+  }
+
+  async deleteAnnouncement(id: string) {
+    return this.api.delete(`/announcements/${id}`);
+  }
+
+  // 安全管理
+  async getAdminUsers() {
+    return this.api.get('/security/admins');
+  }
+
+  async createAdminUser(data: any) {
+    return this.api.post('/security/admins', data);
+  }
+
+  async updateAdminPermissions(adminId: string, permissions: string[]) {
+    return this.api.put(`/security/admins/${adminId}/permissions`, {
+      permissions,
+    });
+  }
+
+  async getSecurityLogs(params: any) {
+    return this.api.get('/security/logs', { params });
+  }
+
+  async updateIpWhitelist(ips: string[]) {
+    return this.api.put('/security/ip-whitelist', { ips });
+  }
+
+  // 通用请求方法
+  async get<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
+    return this.api.get(url, config);
+  }
+
+  async post<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+    return this.api.post(url, data, config);
+  }
+
+  async put<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+    return this.api.put(url, data, config);
+  }
+
+  async delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
+    return this.api.delete(url, config);
+  }
+}
+
+export const apiService = new ApiService();
+export default apiService;

@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Stop-Process -Force)",
+      "Read(//g//**)",
+      "Bash(start:*)",
+      "Bash(timeout:*)",
+      "Bash(smart-restart.bat:*)",
+      "Bash(./smart-restart.bat:*)",
+      "Bash(curl:*)",
+      "Bash(npm run dev:*)",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)",
+      "Bash(python:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx tsc:*)",
+      "Bash(.venvScriptsactivate)",
+      "Bash(\"g:\\CODE\\sdweld1016\\backend\\venv\\Scripts\\activate\")",
+      "Bash(dir:*)",
+      "Bash(node:*)",
+      "Bash(find:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
