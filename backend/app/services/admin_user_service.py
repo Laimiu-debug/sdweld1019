@@ -152,7 +152,10 @@ class AdminUserService:
 
         if expires_at:
             try:
-                user.subscription_expires_at = datetime.fromisoformat(expires_at)
+                end_date = datetime.fromisoformat(expires_at)
+                # 同时更新两个字段以保持兼容性
+                user.subscription_end_date = end_date
+                user.subscription_expires_at = end_date
             except (ValueError, AttributeError):
                 pass
 
@@ -210,16 +213,21 @@ class AdminUserService:
         db.commit()
         db.refresh(user)
 
-        # 如果是企业会员，同步更新企业的会员等级
+        # 如果是企业会员，同步更新企业的会员等级和到期时间
         if membership_tier:
             is_enterprise_tier = membership_tier in ["enterprise", "enterprise_pro", "enterprise_pro_max"]
             if is_enterprise_tier:
                 # 如果是新升级到企业会员，创建企业记录
                 if old_membership_type != "enterprise":
-                    self._create_enterprise_for_user(db, user, membership_tier)
+                    self._create_enterprise_for_user(db, user, membership_tier, expires_at)
                 else:
-                    # 如果已经是企业会员，只更新企业的会员等级
-                    self._update_enterprise_tier(db, user, membership_tier)
+                    # 如果已经是企业会员，更新企业的会员等级和到期时间
+                    self._update_enterprise_tier(db, user, membership_tier, expires_at)
+        elif expires_at:
+            # 即使没有修改会员等级，也要同步更新企业的到期时间
+            is_enterprise_tier = user.membership_type == "enterprise"
+            if is_enterprise_tier:
+                self._update_enterprise_subscription_end_date(db, user, expires_at)
 
         # TODO: 记录操作日志
 
@@ -233,8 +241,8 @@ class AdminUserService:
             "reason": reason
         }
 
-    def _update_enterprise_tier(self, db: Session, user: User, tier: str):
-        """更新企业的会员等级"""
+    def _update_enterprise_tier(self, db: Session, user: User, tier: str, expires_at: Optional[str] = None):
+        """更新企业的会员等级、配额和到期时间"""
         from app.services.enterprise_service import EnterpriseService
 
         enterprise_service = EnterpriseService(db)
@@ -242,19 +250,61 @@ class AdminUserService:
         # 获取用户的企业
         company = enterprise_service.get_company_by_owner(user.id)
         if company:
-            # 更新企业会员等级
-            enterprise_service.update_company(
-                company.id,
-                membership_tier=tier,
-                subscription_status="active",
-                subscription_start_date=datetime.utcnow()
-            )
+            # 根据新的会员等级获取配额限制
+            tier_limits = enterprise_service._get_tier_limits(tier)
+
+            # 准备更新数据
+            update_data = {
+                "membership_tier": tier,
+                "max_employees": tier_limits["max_employees"],
+                "max_factories": tier_limits["max_factories"],
+                "max_wps_records": tier_limits["max_wps_records"],
+                "max_pqr_records": tier_limits["max_pqr_records"],
+                "subscription_status": "active",
+                "subscription_start_date": datetime.utcnow()
+            }
+
+            # 如果提供了到期时间，同步更新企业的到期时间
+            if expires_at:
+                try:
+                    end_date = datetime.fromisoformat(expires_at)
+                    update_data["subscription_end_date"] = end_date
+                    print(f"   - 订阅到期时间: {end_date.strftime('%Y-%m-%d')}")
+                except (ValueError, AttributeError):
+                    pass
+
+            # 更新企业会员等级和配额
+            enterprise_service.update_company(company.id, **update_data)
+
             print(f"✅ 同步更新企业 {company.name} 的会员等级为 {tier}")
+            print(f"   - 员工配额: {tier_limits['max_employees']}")
+            print(f"   - 工厂配额: {tier_limits['max_factories']}")
+            print(f"   - WPS配额: {tier_limits['max_wps_records']}")
+            print(f"   - PQR配额: {tier_limits['max_pqr_records']}")
         else:
             print(f"⚠️  用户 {user.email} 没有企业记录，创建新企业")
-            self._create_enterprise_for_user(db, user, tier)
+            self._create_enterprise_for_user(db, user, tier, expires_at)
 
-    def _create_enterprise_for_user(self, db: Session, user: User, tier: str):
+    def _update_enterprise_subscription_end_date(self, db: Session, user: User, expires_at: str):
+        """仅更新企业的订阅到期时间"""
+        from app.services.enterprise_service import EnterpriseService
+
+        enterprise_service = EnterpriseService(db)
+
+        # 获取用户的企业
+        company = enterprise_service.get_company_by_owner(user.id)
+        if company:
+            try:
+                end_date = datetime.fromisoformat(expires_at)
+                enterprise_service.update_company(
+                    company.id,
+                    subscription_end_date=end_date
+                )
+                print(f"✅ 同步更新企业 {company.name} 的订阅到期时间为 {end_date.strftime('%Y-%m-%d')}")
+            except (ValueError, AttributeError) as e:
+                print(f"⚠️  更新企业订阅到期时间失败: {str(e)}")
+
+    def _create_enterprise_for_user(self, db: Session, user: User, tier: str, expires_at: Optional[str] = None):
         """为用户创建企业和员工记录"""
         from app.services.enterprise_service import EnterpriseService
 
@@ -263,26 +313,47 @@ class AdminUserService:
         # 检查是否已有企业
         existing_company = enterprise_service.get_company_by_owner(user.id)
         if existing_company:
-            # 如果已有企业，更新会员等级
-            enterprise_service.update_company(
-                existing_company.id,
-                membership_tier=tier,
-                subscription_status="active",
-                subscription_start_date=datetime.utcnow()
-            )
+            # 如果已有企业，更新会员等级和到期时间
+            update_data = {
+                "membership_tier": tier,
+                "subscription_status": "active",
+                "subscription_start_date": datetime.utcnow()
+            }
+
+            # 如果提供了到期时间，同步更新
+            if expires_at:
+                try:
+                    end_date = datetime.fromisoformat(expires_at)
+                    update_data["subscription_end_date"] = end_date
+                except (ValueError, AttributeError):
+                    pass
+
+            enterprise_service.update_company(existing_company.id, **update_data)
             print(f"✅ 更新企业 {existing_company.name} 的会员等级为 {tier}")
             return
 
         # 创建企业
         company_name = user.company or f"{user.full_name or user.email}的企业"
-        company = enterprise_service.create_company(
-            owner_id=user.id,
-            name=company_name,
-            membership_tier=tier,
-            contact_person=user.full_name,
-            contact_phone=user.phone,
-            contact_email=user.email
-        )
+
+        # 准备创建企业的参数
+        create_params = {
+            "owner_id": user.id,
+            "name": company_name,
+            "membership_tier": tier,
+            "contact_person": user.full_name,
+            "contact_phone": user.phone,
+            "contact_email": user.email
+        }
+
+        # 如果提供了到期时间，设置订阅到期时间
+        if expires_at:
+            try:
+                end_date = datetime.fromisoformat(expires_at)
+                create_params["subscription_end_date"] = end_date
+            except (ValueError, AttributeError):
+                pass
+
+        company = enterprise_service.create_company(**create_params)
         print(f"✅ 为用户 {user.email} 创建企业: {company.name} (ID: {company.id})")
 
         # 创建默认工厂（总部）

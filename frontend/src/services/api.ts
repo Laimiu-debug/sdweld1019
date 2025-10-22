@@ -54,7 +54,13 @@ class ApiService {
               this.handleUnauthorized()
               break
             case 403:
-              message.error('权限不足')
+              // 显示后端返回的具体权限错误信息
+              const permissionError = response.data?.detail
+              if (permissionError && typeof permissionError === 'string') {
+                message.error(permissionError)
+              } else {
+                message.error('权限不足')
+              }
               break
             case 404:
               // 不显示404错误消息,让组件自己处理
@@ -75,7 +81,13 @@ class ApiService {
               message.error('请求过于频繁，请稍后再试')
               break
             case 500:
-              message.error('服务器内部错误')
+              // 显示后端返回的具体错误信息，如果有的话
+              const serverError = response.data?.detail
+              if (serverError && typeof serverError === 'string') {
+                message.error(serverError)
+              } else {
+                message.error('服务器内部错误')
+              }
               break
             default:
               message.error(response.data?.detail || '请求失败')

@@ -69,18 +69,18 @@ class MembershipService:
                 "storage": 5000,
             },
             "enterprise_pro": {
-                "wps": 500,
-                "pqr": 500,
-                "ppqr": 500,
+                "wps": 400,
+                "pqr": 400,
+                "ppqr": 400,
                 "materials": 1000,
                 "welders": 500,
                 "equipment": 200,
                 "storage": 10000,
             },
             "enterprise_pro_max": {
-                "wps": 1000,
-                "pqr": 1000,
-                "ppqr": 1000,
+                "wps": 500,
+                "pqr": 500,
+                "ppqr": 500,
                 "materials": 2000,
                 "welders": 1000,
                 "equipment": 500,
@@ -90,81 +90,51 @@ class MembershipService:
         return limits.get(tier, limits["free"])
 
     def get_membership_features(self, tier: str) -> List[str]:
-        """根据会员等级获取功能列表"""
-        features = {
-            "free": [
-                "WPS管理模块（10个）",
-                "PQR管理模块（10个）"
-            ],
-            "personal_pro": [
-                "WPS管理模块（30个）",
-                "PQR管理模块（30个）",
-                "pPQR管理模块（30个）",
-                "焊材管理模块",
-                "焊工管理模块"
-            ],
-            "personal_advanced": [
-                "WPS管理模块（50个）",
-                "PQR管理模块（50个）",
-                "pPQR管理模块（50个）",
-                "焊材管理模块",
-                "焊工管理模块",
-                "生产管理模块",
-                "设备管理模块",
-                "质量管理模块"
-            ],
-            "personal_flagship": [
-                "WPS管理模块（100个）",
-                "PQR管理模块（100个）",
-                "pPQR管理模块（100个）",
-                "焊材管理模块",
-                "焊工管理模块",
-                "生产管理模块",
-                "设备管理模块",
-                "质量管理模块",
-                "报表统计模块"
-            ],
-            "enterprise": [
-                "WPS管理模块（200个）",
-                "PQR管理模块（200个）",
-                "pPQR管理模块（200个）",
-                "焊材管理模块",
-                "焊工管理模块",
-                "生产管理模块",
-                "设备管理模块",
-                "质量管理模块",
-                "报表统计模块",
-                "企业员工管理模块（10人）",
-                "多工厂数量：1个"
-            ],
-            "enterprise_pro": [
-                "WPS管理模块（400个）",
-                "PQR管理模块（400个）",
-                "pPQR管理模块（400个）",
-                "焊材管理模块",
-                "焊工管理模块",
-                "生产管理模块",
-                "设备管理模块",
-                "质量管理模块",
-                "报表统计模块",
-                "企业员工管理模块（20人）",
-                "多工厂数量：3个"
-            ],
-            "enterprise_pro_max": [
-                "WPS管理模块（500个）",
-                "PQR管理模块（500个）",
-                "pPQR管理模块（500个）",
-                "焊材管理模块",
-                "焊工管理模块",
-                "生产管理模块",
-                "设备管理模块",
-                "质量管理模块",
-                "报表统计模块",
-                "企业员工管理模块（50人）",
-                "多工厂数量：5个"
-            ]
-        }
-        return features.get(tier, features["free"])
+        """根据会员等级获取功能列表（动态生成）"""
+        # 获取该等级的配额限制
+        limits = self.get_membership_limits(tier)
+
+        # 基础功能（所有等级都有）
+        features = [
+            f"WPS管理模块（{limits['wps']}个）",
+            f"PQR管理模块（{limits['pqr']}个）"
+        ]
+
+        # pPQR模块（专业版及以上）
+        if limits['ppqr'] > 0:
+            features.append(f"pPQR管理模块（{limits['ppqr']}个）")
+
+        # 焊材和焊工模块（专业版及以上）
+        if tier not in ["free", "personal_free"]:
+            if limits['materials'] > 0:
+                features.append("焊材管理模块")
+            if limits['welders'] > 0:
+                features.append("焊工管理模块")
+
+        # 生产、设备、质量模块（高级版及以上）
+        if tier in ["personal_advanced", "personal_flagship"] or tier.startswith("enterprise"):
+            features.append("生产管理模块")
+            if limits['equipment'] > 0:
+                features.append("设备管理模块")
+            features.append("质量管理模块")
+
+        # 报表统计（旗舰版及企业版）
+        if tier == "personal_flagship" or tier.startswith("enterprise"):
+            features.append("报表统计模块")
+
+        # 企业版特有功能
+        if tier.startswith("enterprise"):
+            if tier == "enterprise":
+                features.append("企业员工管理模块（10人）")
+                features.append("多工厂数量：1个")
+            elif tier == "enterprise_pro":
+                features.append("企业员工管理模块（20人）")
+                features.append("多工厂数量：3个")
+            elif tier == "enterprise_pro_max":
+                features.append("企业员工管理模块（50人）")
+                features.append("多工厂数量：5个")
+
+        return features
 
     def check_quota_available(self, user: User, resource_type: str, amount: int = 1) -> bool:
         """检查用户配额是否足够"""
@@ -204,6 +174,7 @@ class MembershipService:
     def get_user_membership_info(self, user_id: int) -> Optional[Dict[str, Any]]:
         """获取用户会员信息"""
         from app.models.company import CompanyEmployee, Company
+        from datetime import datetime
 
         user = self.db.query(User).filter(User.id == user_id).first()
         if not user:
@@ -213,17 +184,17 @@ class MembershipService:
         subscription = self.db.query(Subscription).filter(Subscription.user_id == user_id).first()
 
         # 确定订阅状态和日期
-        subscription_status = user.subscription_status
+        subscription_status = user.subscription_status or "inactive"
         subscription_start_date = user.subscription_start_date
         subscription_end_date = user.subscription_end_date
-        auto_renewal = user.auto_renewal
+        auto_renewal = user.auto_renewal if user.auto_renewal is not None else False
 
         if subscription:
             # 如果有订阅记录，使用订阅表的数据
-            subscription_status = subscription.status
+            subscription_status = subscription.status or "inactive"
             subscription_start_date = subscription.start_date
             subscription_end_date = subscription.end_date
-            auto_renewal = subscription.auto_renew
+            auto_renewal = subscription.auto_renew if subscription.auto_renew is not None else False
 
             # 更新用户表中的数据以保持同步
             user.subscription_status = subscription.status
@@ -231,48 +202,102 @@ class MembershipService:
             user.subscription_end_date = subscription.end_date
             user.auto_renewal = subscription.auto_renew
             self.db.commit()
+        else:
+            # 如果没有订阅记录，根据会员等级设置默认值
+            member_tier = user.member_tier or "free"
+
+            # 免费版用户默认为激活状态
+            if member_tier in ["free", "personal_free"]:
+                subscription_status = "active"
+                # 订阅开始日期为注册日期
+                if not subscription_start_date and hasattr(user, 'created_at') and user.created_at:
+                    subscription_start_date = user.created_at
+                # 免费版永久有效，结束日期为None
+                subscription_end_date = None
+                auto_renewal = False
+            else:
+                # 付费版用户如果没有订阅记录，检查是否有结束日期
+                if not subscription_status or subscription_status == "inactive":
+                    # 如果有结束日期且未过期，设置为激活
+                    if subscription_end_date and subscription_end_date > datetime.utcnow():
+                        subscription_status = "active"
+                    else:
+                        subscription_status = "inactive"
+
+                # 如果没有开始日期，使用注册日期
+                if not subscription_start_date and hasattr(user, 'created_at') and user.created_at:
+                    subscription_start_date = user.created_at
 
         limits = self.get_membership_limits(user.member_tier)
         features = self.get_membership_features(user.member_tier)
 
         # 检查用户是否通过企业继承会员权限
         is_inherited_from_company = False
+        is_company_owner = False
         company_name = None
 
-        # 如果用户是企业会员类型，检查是否是企业员工（非企业所有者）
+        # 如果用户是企业会员类型，检查是否是企业员工或企业所有者
         if user.membership_type == "enterprise":
-            # 查询用户是否是某个企业的员工
-            employee = self.db.query(CompanyEmployee).filter(
-                CompanyEmployee.user_id == user_id,
-                CompanyEmployee.status == "active"
-            ).first()
+            # 先查询用户是否拥有企业
+            owned_company = self.db.query(Company).filter(Company.owner_id == user_id).first()
 
-            if employee:
-                # 获取企业信息
-                company = self.db.query(Company).filter(Company.id == employee.company_id).first()
-                if company:
-                    # 如果用户不是企业所有者，说明是通过企业继承的会员权限
-                    if company.owner_id != user_id:
+            if owned_company:
+                # 用户是企业所有者，使用企业的订阅信息
+                is_company_owner = True
+                company_name = owned_company.name
+
+                # 使用企业的订阅信息
+                if owned_company.subscription_status:
+                    subscription_status = owned_company.subscription_status
+                if owned_company.subscription_start_date:
+                    subscription_start_date = owned_company.subscription_start_date
+                if owned_company.subscription_end_date:
+                    subscription_end_date = owned_company.subscription_end_date
+                if owned_company.auto_renewal is not None:
+                    auto_renewal = owned_company.auto_renewal
+            else:
+                # 查询用户是否是某个企业的员工
+                employee = self.db.query(CompanyEmployee).filter(
+                    CompanyEmployee.user_id == user_id,
+                    CompanyEmployee.status == "active"
+                ).first()
+
+                if employee:
+                    # 获取企业信息
+                    company = self.db.query(Company).filter(Company.id == employee.company_id).first()
+                    if company:
+                        # 用户是企业员工（非所有者），继承企业的会员权限
                         is_inherited_from_company = True
                         company_name = company.name
+
+                        # 继承企业的订阅信息
+                        if company.subscription_status:
+                            subscription_status = company.subscription_status
+                        if company.subscription_start_date:
+                            subscription_start_date = company.subscription_start_date
+                        if company.subscription_end_date:
+                            subscription_end_date = company.subscription_end_date
+                        if company.auto_renewal is not None:
+                            auto_renewal = company.auto_renewal
 
         return {
             "user_id": user.id,
             "email": user.email,
-            "membership_tier": user.member_tier,
-            "membership_type": user.membership_type,
+            "membership_tier": user.member_tier or "free",
+            "membership_type": user.membership_type or "personal",
             "subscription_status": subscription_status,
             "subscription_start_date": subscription_start_date.isoformat() if subscription_start_date else None,
             "subscription_end_date": subscription_end_date.isoformat() if subscription_end_date else None,
             "auto_renewal": auto_renewal,
             "is_inherited_from_company": is_inherited_from_company,
+            "is_company_owner": is_company_owner,
             "company_name": company_name,
             "features": features,
             "quotas": {
-                "wps": {"used": user.wps_quota_used, "limit": limits["wps"]},
-                "pqr": {"used": user.pqr_quota_used, "limit": limits["pqr"]},
-                "ppqr": {"used": user.ppqr_quota_used, "limit": limits["ppqr"]},
-                "storage": {"used": user.storage_quota_used, "limit": limits["storage"]},
+                "wps": {"used": user.wps_quota_used or 0, "limit": limits["wps"]},
+                "pqr": {"used": user.pqr_quota_used or 0, "limit": limits["pqr"]},
+                "ppqr": {"used": user.ppqr_quota_used or 0, "limit": limits["ppqr"]},
+                "storage": {"used": user.storage_quota_used or 0, "limit": limits["storage"]},
             }
         }
 

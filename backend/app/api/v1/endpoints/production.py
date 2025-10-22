@@ -2,138 +2,288 @@
 Production Management API endpoints for the welding system backend.
 """
 from typing import Any, List, Optional
+from math import ceil
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import status as http_status
 from sqlalchemy.orm import Session
 
 from app.api import deps
+from app.schemas.production import ProductionTaskCreate, ProductionTaskUpdate, ProductionTaskResponse, ProductionTaskListResponse
+from app.services.production_service import ProductionService
+from app.core.data_access import WorkspaceContext
 
 router = APIRouter()
 
 
-@router.get("/tasks")
+@router.get("/tasks", response_model=dict)
 async def get_production_tasks(
     db: Session = Depends(deps.get_db),
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
+    factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
     skip: int = Query(0, ge=0, description="跳过记录数"),
     limit: int = Query(100, ge=1, le=1000, description="返回记录数"),
     search: Optional[str] = Query(None, description="搜索关键词"),
     status: Optional[str] = Query(None, description="任务状态"),
     priority: Optional[str] = Query(None, description="优先级"),
+    assigned_welder_id: Optional[int] = Query(None, description="分配焊工ID"),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """
     获取生产任务列表
+
+    - **workspace_type**: 工作区类型（personal/enterprise）
+    - **company_id**: 企业ID（企业工作区必填）
+    - **factory_id**: 工厂ID（可选）
+    - **skip**: 跳过的记录数
+    - **limit**: 返回的记录数
+    - **search**: 搜索关键词
+    - **status**: 任务状态筛选
+    - **priority**: 优先级筛选
+    - **assigned_welder_id**: 分配焊工ID筛选
     """
-    # TODO: 实现实际的数据库查询
-    return {
-        "success": True,
-        "data": {
-            "items": [
-                {
-                    "id": "task-001",
-                    "task_number": "TASK-2025-001",
-                    "task_name": "管道焊接任务",
-                    "wps_id": "wps-001",
-                    "status": "in_progress",
-                    "priority": "high",
-                    "start_date": "2025-01-01",
-                    "end_date": "2025-01-15",
-                    "progress_percentage": 50,
-                    "assigned_welder_id": "welder-001",
-                    "assigned_equipment_id": "equipment-001",
-                    "created_at": "2025-01-01T00:00:00Z",
-                    "updated_at": "2025-01-01T00:00:00Z"
-                }
-            ],
-            "total": 1,
-            "page": 1,
-            "page_size": limit,
-            "total_pages": 1
-        },
-        "message": "获取生产任务列表成功"
-    }
+    try:
+        # 构建工作区上下文
+        workspace_context = WorkspaceContext(
+            workspace_type=workspace_type,
+            user_id=current_user.id,
+            company_id=company_id,
+            factory_id=factory_id
+        )
+
+        # 调用服务层
+        service = ProductionService(db)
+        tasks, total = service.get_production_task_list(
+            current_user=current_user,
+            workspace_context=workspace_context,
+            skip=skip,
+            limit=limit,
+            search=search,
+            status=status,
+            priority=priority,
+            assigned_welder_id=assigned_welder_id
+        )
+
+        # 计算分页信息
+        page = (skip // limit) + 1 if limit > 0 else 1
+        total_pages = ceil(total / limit) if limit > 0 else 0
+
+        return {
+            "success": True,
+            "data": {
+                "items": [ProductionTaskResponse.model_validate(t) for t in tasks],
+                "total": total,
+                "page": page,
+                "page_size": limit,
+                "total_pages": total_pages
+            },
+            "message": "获取生产任务列表成功"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 
-@router.post("/tasks")
+@router.post("/tasks", response_model=dict)
 async def create_production_task(
-    task_data: dict,
+    task_in: ProductionTaskCreate,
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
+    factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """
     创建生产任务
+
+    - **workspace_type**: 工作区类型（personal/enterprise）
+    - **company_id**: 企业ID（企业工作区必填）
+    - **factory_id**: 工厂ID（可选）
     """
-    # TODO: 实现实际的创建逻辑
-    return {
-        "success": True,
-        "data": {
-            "id": "new-task-id",
-            **task_data,
-            "created_at": "2025-01-01T00:00:00Z"
-        },
-        "message": "生产任务创建成功"
-    }
+    try:
+        # 构建工作区上下文
+        workspace_context = WorkspaceContext(
+            workspace_type=workspace_type,
+            user_id=current_user.id,
+            company_id=company_id,
+            factory_id=factory_id
+        )
+
+        # 调用服务层
+        service = ProductionService(db)
+        task = service.create_production_task(
+            current_user=current_user,
+            task_data=task_in.model_dump(),
+            workspace_context=workspace_context
+        )
+
+        return {
+            "success": True,
+            "data": ProductionTaskResponse.model_validate(task),
+            "message": "生产任务创建成功"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 
-@router.get("/tasks/{task_id}")
+@router.get("/tasks/{task_id}", response_model=dict)
 async def get_production_task_detail(
-    task_id: str,
+    task_id: int,
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
+    factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """
     获取生产任务详情
+
+    - **task_id**: 任务ID
+    - **workspace_type**: 工作区类型（personal/enterprise）
+    - **company_id**: 企业ID（企业工作区必填）
+    - **factory_id**: 工厂ID（可选）
     """
-    # TODO: 实现实际的查询逻辑
-    return {
-        "success": True,
-        "data": {
-            "id": task_id,
-            "task_number": "TASK-2025-001",
-            "task_name": "管道焊接任务",
-            "status": "in_progress",
-            "progress_percentage": 50
-        },
-        "message": "获取生产任务详情成功"
-    }
+    try:
+        # 构建工作区上下文
+        workspace_context = WorkspaceContext(
+            workspace_type=workspace_type,
+            user_id=current_user.id,
+            company_id=company_id,
+            factory_id=factory_id
+        )
+
+        # 调用服务层
+        service = ProductionService(db)
+        task = service.get_production_task_by_id(
+            task_id=task_id,
+            current_user=current_user,
+            workspace_context=workspace_context
+        )
+
+        return {
+            "success": True,
+            "data": ProductionTaskResponse.model_validate(task),
+            "message": "获取生产任务详情成功"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 
-@router.put("/tasks/{task_id}")
+@router.put("/tasks/{task_id}", response_model=dict)
 async def update_production_task(
-    task_id: str,
-    task_data: dict,
+    task_id: int,
+    task_in: ProductionTaskUpdate,
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
+    factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """
     更新生产任务
+
+    - **task_id**: 任务ID
+    - **workspace_type**: 工作区类型（personal/enterprise）
+    - **company_id**: 企业ID（企业工作区必填）
+    - **factory_id**: 工厂ID（可选）
     """
-    # TODO: 实现实际的更新逻辑
-    return {
-        "success": True,
-        "data": {
-            "id": task_id,
-            **task_data,
-            "updated_at": "2025-01-01T00:00:00Z"
-        },
-        "message": "生产任务更新成功"
-    }
+    try:
+        # 构建工作区上下文
+        workspace_context = WorkspaceContext(
+            workspace_type=workspace_type,
+            user_id=current_user.id,
+            company_id=company_id,
+            factory_id=factory_id
+        )
+
+        # 调用服务层
+        service = ProductionService(db)
+        task = service.update_production_task(
+            task_id=task_id,
+            current_user=current_user,
+            task_data=task_in.model_dump(exclude_unset=True),
+            workspace_context=workspace_context
+        )
+
+        return {
+            "success": True,
+            "data": ProductionTaskResponse.model_validate(task),
+            "message": "生产任务更新成功"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 
-@router.delete("/tasks/{task_id}")
+@router.delete("/tasks/{task_id}", response_model=dict)
 async def delete_production_task(
-    task_id: str,
+    task_id: int,
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
+    factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """
     删除生产任务
+
+    - **task_id**: 任务ID
+    - **workspace_type**: 工作区类型（personal/enterprise）
+    - **company_id**: 企业ID（企业工作区必填）
+    - **factory_id**: 工厂ID（可选）
     """
-    # TODO: 实现实际的删除逻辑
-    return {
-        "success": True,
-        "message": "生产任务删除成功"
-    }
+    try:
+        # 构建工作区上下文
+        workspace_context = WorkspaceContext(
+            workspace_type=workspace_type,
+            user_id=current_user.id,
+            company_id=company_id,
+            factory_id=factory_id
+        )
+
+        # 调用服务层
+        service = ProductionService(db)
+        service.delete_production_task(
+            task_id=task_id,
+            current_user=current_user,
+            workspace_context=workspace_context
+        )
+
+        return {
+            "success": True,
+            "message": "生产任务删除成功"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 
 @router.put("/tasks/{task_id}/progress")

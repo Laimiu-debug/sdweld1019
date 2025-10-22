@@ -76,9 +76,7 @@ class WorkspaceService {
    * 获取用户所有可用的工作区
    */
   async getUserWorkspaces(): Promise<ApiResponse<Workspace[]>> {
-    console.log('开始获取用户工作区列表')
     const response = await apiService.get<Workspace[]>('/workspace/workspaces')
-    console.log('获取工作区列表响应:', response)
     return response
   }
 
@@ -94,9 +92,7 @@ class WorkspaceService {
    * 切换工作区
    */
   async switchWorkspace(request: WorkspaceSwitchRequest): Promise<ApiResponse<WorkspaceSwitchResponse>> {
-    console.log('切换工作区请求:', request)
     const response = await apiService.post<WorkspaceSwitchResponse>('/workspace/workspaces/switch', request)
-    console.log('切换工作区响应:', response)
     return response
   }
 
@@ -290,27 +286,16 @@ class WorkspaceService {
    * 验证工作区切换权限
    */
   canSwitchToWorkspace(workspace: Workspace): { allowed: boolean, reason?: string } {
-    console.log('检查工作区切换权限:', {
-      workspaceId: workspace.id,
-      workspaceType: workspace.type,
-      workspaceStatus: workspace.status,
-      workspaceRole: workspace.role,
-      membershipTier: workspace.membership_tier
-    })
-
     // 检查工作区是否激活
     if (workspace.status && workspace.status !== 'active') {
-      console.log('工作区未激活:', workspace.status)
       return { allowed: false, reason: '工作区未激活' }
     }
 
     // 检查用户是否有权限访问该工作区
     if (workspace.type === 'enterprise' && !workspace.role) {
-      console.log('企业工作区缺少角色信息')
       return { allowed: false, reason: '您没有权限访问此企业工作区' }
     }
 
-    console.log('工作区切换权限检查通过')
     return { allowed: true }
   }
 

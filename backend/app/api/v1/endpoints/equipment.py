@@ -116,6 +116,7 @@ async def get_equipment_list(
     equipment_type: Optional[str] = Query(None, description="设备类型"),
     status: Optional[str] = Query(None, description="设备状态"),
     factory_id: Optional[int] = Query(None, description="工厂ID筛选"),
+    workspace_type: Optional[str] = Query(None, description="工作区类型: personal/company"),
     current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
     """
@@ -129,23 +130,62 @@ async def get_equipment_list(
     - **factory_id**: 工厂ID筛选
     """
     try:
-        # 获取工作区服务
-        workspace_service = get_workspace_service(db)
-        current_workspace = await workspace_service.get_current_workspace(current_user)
+        print(f"[设备列表API] 用户ID: {current_user.id}")
+        print(f"[设备列表API] 前端传递的workspace_type: {workspace_type}")
+        print(f"[设备列表API] 前端传递的factory_id: {factory_id}")
 
-        if not current_workspace:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="未找到工作区信息"
+        # 根据前端传递的工作区类型创建工作区上下文
+        if workspace_type == "personal":
+            # 个人工作区：只显示个人设备
+            print(f"[设备列表API] 使用个人工作区")
+            workspace_context = WorkspaceContext(
+                user_id=current_user.id,
+                workspace_type="personal",
+                company_id=None,
+                factory_id=None
+            )
+        elif workspace_type == "company":
+            # 企业工作区：显示企业设备
+            # 获取用户的企业信息
+            user_workspace_type, user_company_id, user_factory_id = get_user_company_info(db, current_user.id)
+
+            print(f"[设备列表API] 用户企业信息: workspace_type={user_workspace_type}, company_id={user_company_id}, factory_id={user_factory_id}")
+
+            # 如果用户没有企业关系,返回空列表
+            if user_workspace_type == "personal":
+                print(f"[设备列表API] 用户没有企业关系,返回空列表")
+                return {
+                    "success": True,
+                    "data": {
+                        "items": [],
+                        "total": 0,
+                        "page": 1,
+                        "page_size": limit,
+                        "total_pages": 0
+                    },
+                    "message": "您不是任何企业的成员"
+                }
+
+            # 使用企业工作区
+            print(f"[设备列表API] 使用企业工作区: company_id={user_company_id}")
+            workspace_context = WorkspaceContext(
+                user_id=current_user.id,
+                workspace_type="enterprise",  # 强制使用enterprise
+                company_id=user_company_id,
+                factory_id=factory_id or user_factory_id
+            )
+        else:
+            # 默认：自动判断（如果有企业关系则显示企业，否则显示个人）
+            user_workspace_type, user_company_id, user_factory_id = get_user_company_info(db, current_user.id)
+            workspace_context = WorkspaceContext(
+                user_id=current_user.id,
+                workspace_type=user_workspace_type,
+                company_id=user_company_id,
+                factory_id=factory_id or user_factory_id
             )
 
-        # 创建工作区上下文
-        workspace_context = WorkspaceContext(
-            user_id=current_user.id,
-            workspace_type=current_workspace.type,
-            company_id=current_workspace.company_id,
-            factory_id=factory_id or current_workspace.factory_id
-        )
+        # 验证工作区上下文
+        workspace_context.validate()
 
         # 创建设备服务
         equipment_service = EquipmentService(db)
@@ -212,9 +252,40 @@ async def get_equipment_list(
         )
 
 
+def get_user_company_info(db: Session, user_id: int) -> tuple:
+    """获取用户的公司信息"""
+    try:
+        from app.models.company import CompanyEmployee, Company
+
+        # 首先检查用户是否是企业所有者
+        company_as_owner = db.query(Company).filter(
+            Company.owner_id == user_id
+        ).first()
+
+        if company_as_owner:
+            # 用户是企业所有者，返回企业信息
+            return ("enterprise", company_as_owner.id, None)
+
+        # 如果不是所有者，检查是否是企业员工
+        company_employee = db.query(CompanyEmployee).filter(
+            CompanyEmployee.user_id == user_id,
+            CompanyEmployee.status == "active"
+        ).first()
+
+        if company_employee:
+            # 用户是企业员工，返回企业信息
+            return ("enterprise", company_employee.company_id, company_employee.factory_id)
+        else:
+            # 用户既不是所有者也不是员工，返回个人工作区
+            return ("personal", None, None)
+    except Exception as e:
+        print(f"Error in get_user_company_info: {str(e)}")
+        return ("personal", None, None)
+
 @router.post("/")
 async def create_equipment(
     equipment_data: EquipmentCreate,
+    workspace_type: Optional[str] = Query(None, description="工作区类型: personal/company"),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
@@ -222,23 +293,36 @@ async def create_equipment(
     创建新设备
     """
     try:
-        # 获取工作区服务
-        workspace_service = get_workspace_service(db)
-        current_workspace = await workspace_service.get_current_workspace(current_user)
-
-        if not current_workspace:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="未找到工作区信息"
+        # 根据前端传递的工作区类型创建工作区上下文
+        if workspace_type == "personal":
+            # 个人工作区：创建个人设备
+            workspace_context = WorkspaceContext(
+                user_id=current_user.id,
+                workspace_type="personal",
+                company_id=None,
+                factory_id=None
+            )
+        elif workspace_type == "company":
+            # 企业工作区：创建企业设备
+            user_workspace_type, user_company_id, user_factory_id = get_user_company_info(db, current_user.id)
+            workspace_context = WorkspaceContext(
+                user_id=current_user.id,
+                workspace_type=user_workspace_type,
+                company_id=user_company_id,
+                factory_id=user_factory_id
+            )
+        else:
+            # 默认：自动判断（如果有企业关系则显示企业，否则显示个人）
+            user_workspace_type, user_company_id, user_factory_id = get_user_company_info(db, current_user.id)
+            workspace_context = WorkspaceContext(
+                user_id=current_user.id,
+                workspace_type=user_workspace_type,
+                company_id=user_company_id,
+                factory_id=user_factory_id
             )
 
-        # 创建工作区上下文
-        workspace_context = WorkspaceContext(
-            user_id=current_user.id,
-            workspace_type=current_workspace.type,
-            company_id=current_workspace.company_id,
-            factory_id=current_workspace.factory_id
-        )
+        # 验证工作区上下文
+        workspace_context.validate()
 
         # 创建设备服务
         equipment_service = EquipmentService(db)
@@ -275,6 +359,7 @@ async def create_equipment(
 @router.get("/{equipment_id}")
 async def get_equipment_detail(
     equipment_id: int,
+    workspace_type: Optional[str] = Query(None, description="工作区类型: personal/company"),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
@@ -282,23 +367,36 @@ async def get_equipment_detail(
     获取设备详情
     """
     try:
-        # 获取工作区服务
-        workspace_service = get_workspace_service(db)
-        current_workspace = await workspace_service.get_current_workspace(current_user)
-
-        if not current_workspace:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="未找到工作区信息"
+        # 根据前端传递的工作区类型创建工作区上下文
+        if workspace_type == "personal":
+            # 个人工作区
+            workspace_context = WorkspaceContext(
+                user_id=current_user.id,
+                workspace_type="personal",
+                company_id=None,
+                factory_id=None
+            )
+        elif workspace_type == "company":
+            # 企业工作区
+            user_workspace_type, user_company_id, user_factory_id = get_user_company_info(db, current_user.id)
+            workspace_context = WorkspaceContext(
+                user_id=current_user.id,
+                workspace_type=user_workspace_type,
+                company_id=user_company_id,
+                factory_id=user_factory_id
+            )
+        else:
+            # 默认：自动判断
+            user_workspace_type, user_company_id, user_factory_id = get_user_company_info(db, current_user.id)
+            workspace_context = WorkspaceContext(
+                user_id=current_user.id,
+                workspace_type=user_workspace_type,
+                company_id=user_company_id,
+                factory_id=user_factory_id
             )
 
-        # 创建工作区上下文
-        workspace_context = WorkspaceContext(
-            user_id=current_user.id,
-            workspace_type=current_workspace.type,
-            company_id=current_workspace.company_id,
-            factory_id=current_workspace.factory_id
-        )
+        # 验证工作区上下文
+        workspace_context.validate()
 
         # 创建设备服务
         equipment_service = EquipmentService(db)
@@ -394,6 +492,7 @@ async def get_equipment_detail(
 async def update_equipment(
     equipment_id: int,
     equipment_data: EquipmentUpdate,
+    workspace_type: Optional[str] = Query(None, description="工作区类型: personal/company"),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
@@ -401,23 +500,33 @@ async def update_equipment(
     更新设备信息
     """
     try:
-        # 获取工作区服务
-        workspace_service = get_workspace_service(db)
-        current_workspace = await workspace_service.get_current_workspace(current_user)
-
-        if not current_workspace:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="未找到工作区信息"
+        # 根据前端传递的工作区类型创建工作区上下文
+        if workspace_type == "personal":
+            workspace_context = WorkspaceContext(
+                user_id=current_user.id,
+                workspace_type="personal",
+                company_id=None,
+                factory_id=None
+            )
+        elif workspace_type == "company":
+            user_workspace_type, user_company_id, user_factory_id = get_user_company_info(db, current_user.id)
+            workspace_context = WorkspaceContext(
+                user_id=current_user.id,
+                workspace_type=user_workspace_type,
+                company_id=user_company_id,
+                factory_id=user_factory_id
+            )
+        else:
+            user_workspace_type, user_company_id, user_factory_id = get_user_company_info(db, current_user.id)
+            workspace_context = WorkspaceContext(
+                user_id=current_user.id,
+                workspace_type=user_workspace_type,
+                company_id=user_company_id,
+                factory_id=user_factory_id
             )
 
-        # 创建工作区上下文
-        workspace_context = WorkspaceContext(
-            user_id=current_user.id,
-            workspace_type=current_workspace.type,
-            company_id=current_workspace.company_id,
-            factory_id=current_workspace.factory_id
-        )
+        # 验证工作区上下文
+        workspace_context.validate()
 
         # 创建设备服务
         equipment_service = EquipmentService(db)
@@ -461,6 +570,7 @@ async def update_equipment(
 @router.delete("/{equipment_id}")
 async def delete_equipment(
     equipment_id: int,
+    workspace_type: Optional[str] = Query(None, description="工作区类型: personal/company"),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
@@ -468,23 +578,33 @@ async def delete_equipment(
     删除设备
     """
     try:
-        # 获取工作区服务
-        workspace_service = get_workspace_service(db)
-        current_workspace = await workspace_service.get_current_workspace(current_user)
-
-        if not current_workspace:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="未找到工作区信息"
+        # 根据前端传递的工作区类型创建工作区上下文
+        if workspace_type == "personal":
+            workspace_context = WorkspaceContext(
+                user_id=current_user.id,
+                workspace_type="personal",
+                company_id=None,
+                factory_id=None
+            )
+        elif workspace_type == "company":
+            user_workspace_type, user_company_id, user_factory_id = get_user_company_info(db, current_user.id)
+            workspace_context = WorkspaceContext(
+                user_id=current_user.id,
+                workspace_type=user_workspace_type,
+                company_id=user_company_id,
+                factory_id=user_factory_id
+            )
+        else:
+            user_workspace_type, user_company_id, user_factory_id = get_user_company_info(db, current_user.id)
+            workspace_context = WorkspaceContext(
+                user_id=current_user.id,
+                workspace_type=user_workspace_type,
+                company_id=user_company_id,
+                factory_id=user_factory_id
             )
 
-        # 创建工作区上下文
-        workspace_context = WorkspaceContext(
-            user_id=current_user.id,
-            workspace_type=current_workspace.type,
-            company_id=current_workspace.company_id,
-            factory_id=current_workspace.factory_id
-        )
+        # 验证工作区上下文
+        workspace_context.validate()
 
         # 创建设备服务
         equipment_service = EquipmentService(db)
@@ -529,23 +649,19 @@ async def update_equipment_status(
     更新设备状态
     """
     try:
-        # 获取工作区服务
-        workspace_service = get_workspace_service(db)
-        current_workspace = await workspace_service.get_current_workspace(current_user)
+        # 获取用户的实际公司信息
+        user_workspace_type, user_company_id, user_factory_id = get_user_company_info(db, current_user.id)
 
-        if not current_workspace:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="未找到工作区信息"
-            )
-
-        # 创建工作区上下文
+        # 创建工作区上下文 - 使用真实的公司信息
         workspace_context = WorkspaceContext(
             user_id=current_user.id,
-            workspace_type=current_workspace.type,
-            company_id=current_workspace.company_id,
-            factory_id=current_workspace.factory_id
+            workspace_type=user_workspace_type,
+            company_id=user_company_id,
+            factory_id=user_factory_id
         )
+
+        # 验证工作区上下文
+        workspace_context.validate()
 
         # 创建设备服务
         equipment_service = EquipmentService(db)
@@ -594,23 +710,19 @@ async def get_maintenance_alerts(
     获取维护提醒
     """
     try:
-        # 获取工作区服务
-        workspace_service = get_workspace_service(db)
-        current_workspace = await workspace_service.get_current_workspace(current_user)
+        # 获取用户的实际公司信息
+        user_workspace_type, user_company_id, user_factory_id = get_user_company_info(db, current_user.id)
 
-        if not current_workspace:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="未找到工作区信息"
-            )
-
-        # 创建工作区上下文
+        # 创建工作区上下文 - 使用真实的公司信息
         workspace_context = WorkspaceContext(
             user_id=current_user.id,
-            workspace_type=current_workspace.type,
-            company_id=current_workspace.company_id,
-            factory_id=current_workspace.factory_id
+            workspace_type=user_workspace_type,
+            company_id=user_company_id,
+            factory_id=user_factory_id
         )
+
+        # 验证工作区上下文
+        workspace_context.validate()
 
         # 创建设备服务
         equipment_service = EquipmentService(db)
@@ -669,6 +781,7 @@ async def get_maintenance_alerts(
 
 @router.get("/statistics/overview")
 async def get_equipment_statistics(
+    workspace_type: Optional[str] = Query(None, description="工作区类型: personal/company"),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
@@ -676,23 +789,33 @@ async def get_equipment_statistics(
     获取设备统计信息
     """
     try:
-        # 获取工作区服务
-        workspace_service = get_workspace_service(db)
-        current_workspace = await workspace_service.get_current_workspace(current_user)
-
-        if not current_workspace:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="未找到工作区信息"
+        # 根据前端传递的工作区类型创建工作区上下文
+        if workspace_type == "personal":
+            workspace_context = WorkspaceContext(
+                user_id=current_user.id,
+                workspace_type="personal",
+                company_id=None,
+                factory_id=None
+            )
+        elif workspace_type == "company":
+            user_workspace_type, user_company_id, user_factory_id = get_user_company_info(db, current_user.id)
+            workspace_context = WorkspaceContext(
+                user_id=current_user.id,
+                workspace_type=user_workspace_type,
+                company_id=user_company_id,
+                factory_id=user_factory_id
+            )
+        else:
+            user_workspace_type, user_company_id, user_factory_id = get_user_company_info(db, current_user.id)
+            workspace_context = WorkspaceContext(
+                user_id=current_user.id,
+                workspace_type=user_workspace_type,
+                company_id=user_company_id,
+                factory_id=user_factory_id
             )
 
-        # 创建工作区上下文
-        workspace_context = WorkspaceContext(
-            user_id=current_user.id,
-            workspace_type=current_workspace.type,
-            company_id=current_workspace.company_id,
-            factory_id=current_workspace.factory_id
-        )
+        # 验证工作区上下文
+        workspace_context.validate()
 
         # 创建设备服务
         equipment_service = EquipmentService(db)

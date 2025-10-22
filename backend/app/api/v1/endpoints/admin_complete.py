@@ -636,8 +636,8 @@ def _get_wps_limit(tier: str) -> int:
         "personal_advanced": 50,
         "personal_flagship": 100,
         "enterprise": 200,
-        "enterprise_pro": 500,
-        "enterprise_pro_max": 1000
+        "enterprise_pro": 400,
+        "enterprise_pro_max": 500
     }
     return limits.get(tier, 10)
 
@@ -650,8 +650,8 @@ def _get_pqr_limit(tier: str) -> int:
         "personal_advanced": 50,
         "personal_flagship": 100,
         "enterprise": 200,
-        "enterprise_pro": 500,
-        "enterprise_pro_max": 1000
+        "enterprise_pro": 400,
+        "enterprise_pro_max": 500
     }
     return limits.get(tier, 10)
 
@@ -664,7 +664,7 @@ def _get_ppqr_limit(tier: str) -> int:
         "personal_advanced": 50,
         "personal_flagship": 100,
         "enterprise": 200,
-        "enterprise_pro": 500,
-        "enterprise_pro_max": 1000
+        "enterprise_pro": 400,
+        "enterprise_pro_max": 500
     }
     return limits.get(tier, 0)

@@ -45,19 +45,47 @@ class EquipmentService:
             Exception: 创建失败时抛出异常
         """
         try:
-            # 检查配额
+            # 验证工作区上下文
             workspace_context.validate()
-            if not self.quota_service.check_quota(current_user, workspace_context, "equipment", 1):
-                raise Exception("设备配额不足")
 
-            # 检查设备编号是否重复
-            existing_equipment = self.db.query(Equipment).filter(
-                Equipment.equipment_code == equipment_data.get("equipment_code"),
-                Equipment.company_id == workspace_context.company_id
-            ).first()
+            # 企业工作区：检查创建权限
+            if workspace_context.workspace_type == "enterprise":
+                self._check_create_permission(current_user, workspace_context)
+
+            # 检查配额（个人工作区会自动跳过设备配额检查）
+            self.quota_service.check_quota(current_user, workspace_context, "equipment", 1)
+
+            # 检查设备编号是否重复 - 根据工作区类型检查
+            equipment_code = equipment_data.get("equipment_code")
+
+            if workspace_context.workspace_type == "personal":
+                # 个人工作区：检查该用户的个人设备中是否有重复编号
+                existing_equipment = self.db.query(Equipment).filter(
+                    Equipment.equipment_code == equipment_code,
+                    Equipment.workspace_type == "personal",
+                    Equipment.user_id == current_user.id
+                ).first()
+            elif workspace_context.workspace_type == "enterprise":
+                # 企业工作区：检查该企业的设备中是否有重复编号
+                if workspace_context.company_id:
+                    existing_equipment = self.db.query(Equipment).filter(
+                        Equipment.equipment_code == equipment_code,
+                        Equipment.workspace_type == "enterprise",
+                        Equipment.company_id == workspace_context.company_id
+                    ).first()
+                else:
+                    existing_equipment = None
+            else:
+                existing_equipment = None
 
             if existing_equipment:
-                raise Exception(f"设备编号 {equipment_data.get('equipment_code')} 已存在")
+                raise Exception(f"设备编号 {equipment_code} 已存在")
+
+            # 确定访问级别：企业工作区默认为company，个人工作区默认为private
+            if workspace_context.workspace_type == "enterprise":
+                default_access_level = "company"
+            else:
+                default_access_level = "private"
 
             # 创建设备
             equipment = Equipment(
@@ -66,7 +94,7 @@ class EquipmentService:
                 workspace_type=workspace_context.workspace_type,
                 company_id=workspace_context.company_id,
                 factory_id=workspace_context.factory_id,
-                access_level=equipment_data.get("access_level", "private"),
+                access_level=equipment_data.get("access_level", default_access_level),
 
                 # 基本信息
                 equipment_code=equipment_data.get("equipment_code"),
@@ -173,13 +201,41 @@ class EquipmentService:
             Tuple[List[Equipment], int]: 设备列表和总数
         """
         try:
+            # 检查查看权限并获取访问范围
+            access_info = self._check_list_permission(current_user, workspace_context)
+
             # 构建基础查询
             query = self.db.query(Equipment)
 
-            # 应用工作区过滤
-            query = self.data_access.apply_workspace_filter(
-                query, Equipment, current_user, workspace_context
-            )
+            # 应用工作区过滤 - 根据工作区类型严格过滤
+            if workspace_context.workspace_type == "personal":
+                # 个人工作区：只查询个人设备（workspace_type='personal' AND user_id=当前用户）
+                query = query.filter(
+                    Equipment.workspace_type == "personal",
+                    Equipment.user_id == current_user.id
+                )
+            elif workspace_context.workspace_type == "company" or workspace_context.workspace_type == "enterprise":
+                # 企业工作区：只查询企业设备（workspace_type='enterprise' AND company_id=企业ID）
+                if workspace_context.company_id:
+                    query = query.filter(
+                        Equipment.workspace_type == "enterprise",
+                        Equipment.company_id == workspace_context.company_id
+                    )
+
+                    # 根据data_access_scope过滤
+                    if access_info["data_access_scope"] == "factory" and access_info["factory_id"]:
+                        # 只能查看所在工厂的设备
+                        query = query.filter(Equipment.factory_id == access_info["factory_id"])
+                else:
+                    # 如果没有company_id，返回空结果
+                    query = query.filter(Equipment.id == -1)
+            else:
+                # 未知工作区类型，返回空结果
+                query = query.filter(Equipment.id == -1)
+
+            # 应用工厂过滤（可选，用户手动筛选）
+            if factory_id:
+                query = query.filter(Equipment.factory_id == factory_id)
 
             # 应用筛选条件
             if equipment_type:
@@ -442,38 +498,69 @@ class EquipmentService:
             Dict[str, Any]: 统计信息
         """
         try:
-            # 构建基础查询
-            query = self.db.query(Equipment)
+            # 构建基础查询 - 应用工作区过滤
+            query = self.db.query(Equipment).filter(Equipment.is_active == True)
 
             # 应用工作区过滤
-            query = self.data_access.apply_workspace_filter(
-                query, Equipment, current_user, workspace_context
-            )
-
-            # 只统计激活设备
-            query = query.filter(Equipment.is_active == True)
+            if workspace_context.workspace_type == "personal":
+                query = query.filter(
+                    Equipment.workspace_type == "personal",
+                    Equipment.user_id == current_user.id
+                )
+            elif workspace_context.workspace_type == "company" or workspace_context.workspace_type == "enterprise":
+                if workspace_context.company_id:
+                    query = query.filter(
+                        Equipment.workspace_type == "enterprise",
+                        Equipment.company_id == workspace_context.company_id
+                    )
+                else:
+                    query = query.filter(Equipment.id == -1)
+            else:
+                query = query.filter(Equipment.id == -1)
 
             # 总数统计
             total_equipment = query.count()
 
-            # 状态统计
-            status_stats = self.db.query(
+            # 状态统计 - 应用相同的工作区过滤
+            status_query = self.db.query(
                 Equipment.status,
                 func.count(Equipment.id).label('count')
-            ).filter(
-                Equipment.is_active == True
-            ).group_by(Equipment.status).all()
+            ).filter(Equipment.is_active == True)
 
+            if workspace_context.workspace_type == "personal":
+                status_query = status_query.filter(
+                    Equipment.workspace_type == "personal",
+                    Equipment.user_id == current_user.id
+                )
+            elif workspace_context.workspace_type == "company" or workspace_context.workspace_type == "enterprise":
+                if workspace_context.company_id:
+                    status_query = status_query.filter(
+                        Equipment.workspace_type == "enterprise",
+                        Equipment.company_id == workspace_context.company_id
+                    )
+
+            status_stats = status_query.group_by(Equipment.status).all()
             status_counts = {stat.status: stat.count for stat in status_stats}
 
-            # 类型统计
-            type_stats = self.db.query(
+            # 类型统计 - 应用相同的工作区过滤
+            type_query = self.db.query(
                 Equipment.equipment_type,
                 func.count(Equipment.id).label('count')
-            ).filter(
-                Equipment.is_active == True
-            ).group_by(Equipment.equipment_type).all()
+            ).filter(Equipment.is_active == True)
 
+            if workspace_context.workspace_type == "personal":
+                type_query = type_query.filter(
+                    Equipment.workspace_type == "personal",
+                    Equipment.user_id == current_user.id
+                )
+            elif workspace_context.workspace_type == "company" or workspace_context.workspace_type == "enterprise":
+                if workspace_context.company_id:
+                    type_query = type_query.filter(
+                        Equipment.workspace_type == "enterprise",
+                        Equipment.company_id == workspace_context.company_id
+                    )
+
+            type_stats = type_query.group_by(Equipment.equipment_type).all()
             type_counts = {stat.equipment_type: stat.count for stat in type_stats}
 
             # 维护提醒统计
@@ -543,3 +630,160 @@ class EquipmentService:
             "broken",
             "retired"
         ]
+
+    def _check_create_permission(self, current_user: User, workspace_context: WorkspaceContext):
+        """
+        检查创建设备的权限
+
+        Args:
+            current_user: 当前用户
+            workspace_context: 工作区上下文
+
+        Raises:
+            HTTPException: 如果没有权限
+        """
+        from fastapi import HTTPException, status
+        from app.models.company import Company, CompanyEmployee, CompanyRole
+
+        # 检查用户是否是企业所有者
+        company = self.db.query(Company).filter(
+            Company.id == workspace_context.company_id
+        ).first()
+
+        if company and company.owner_id == current_user.id:
+            # 企业所有者拥有所有权限
+            return
+
+        # 检查用户是否是企业员工
+        employee = self.db.query(CompanyEmployee).filter(
+            CompanyEmployee.user_id == current_user.id,
+            CompanyEmployee.company_id == workspace_context.company_id,
+            CompanyEmployee.status == "active"
+        ).first()
+
+        if not employee:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="您不是该企业的成员"
+            )
+
+        # 企业管理员拥有所有权限
+        if employee.role == "admin":
+            return
+
+        # 检查角色权限
+        if employee.company_role_id:
+            role = self.db.query(CompanyRole).filter(
+                CompanyRole.id == employee.company_role_id,
+                CompanyRole.is_active == True
+            ).first()
+
+            if role:
+                permissions = role.permissions or {}
+                equipment_permissions = permissions.get("equipment_management", {})
+
+                if not equipment_permissions.get("create", False):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="权限不足：您没有创建设备的权限"
+                    )
+                return
+
+        # 无角色的员工默认可以创建
+        return
+
+    def _check_list_permission(self, current_user: User, workspace_context: WorkspaceContext) -> Dict[str, Any]:
+        """
+        检查查看设备列表的权限，并返回访问范围
+
+        Args:
+            current_user: 当前用户
+            workspace_context: 工作区上下文
+
+        Returns:
+            Dict: 包含访问范围信息
+                - can_view: 是否可以查看
+                - data_access_scope: 数据访问范围 ("company" 或 "factory")
+                - factory_id: 如果是factory范围，返回工厂ID
+
+        Raises:
+            HTTPException: 如果没有权限
+        """
+        from fastapi import HTTPException, status
+        from app.models.company import Company, CompanyEmployee, CompanyRole
+
+        # 个人工作区：可以查看自己的设备
+        if workspace_context.workspace_type == "personal":
+            return {
+                "can_view": True,
+                "data_access_scope": "personal",
+                "factory_id": None
+            }
+
+        # 企业工作区：检查权限
+        # 检查用户是否是企业所有者
+        company = self.db.query(Company).filter(
+            Company.id == workspace_context.company_id
+        ).first()
+
+        if company and company.owner_id == current_user.id:
+            # 企业所有者可以查看整个企业的数据
+            return {
+                "can_view": True,
+                "data_access_scope": "company",
+                "factory_id": None
+            }
+
+        # 检查用户是否是企业员工
+        employee = self.db.query(CompanyEmployee).filter(
+            CompanyEmployee.user_id == current_user.id,
+            CompanyEmployee.company_id == workspace_context.company_id,
+            CompanyEmployee.status == "active"
+        ).first()
+
+        if not employee:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="您不是该企业的成员"
+            )
+
+        # 企业管理员可以查看整个企业的数据
+        if employee.role == "admin":
+            return {
+                "can_view": True,
+                "data_access_scope": "company",
+                "factory_id": None
+            }
+
+        # 检查角色权限
+        if employee.company_role_id:
+            role = self.db.query(CompanyRole).filter(
+                CompanyRole.id == employee.company_role_id,
+                CompanyRole.is_active == True
+            ).first()
+
+            if role:
+                permissions = role.permissions or {}
+                equipment_permissions = permissions.get("equipment_management", {})
+
+                if not equipment_permissions.get("view", False):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="权限不足：您没有查看设备的权限"
+                    )
+
+                # 根据角色的data_access_scope决定访问范围
+                data_access_scope = role.data_access_scope or employee.data_access_scope or "factory"
+
+                return {
+                    "can_view": True,
+                    "data_access_scope": data_access_scope,
+                    "factory_id": employee.factory_id if data_access_scope == "factory" else None
+                }
+
+        # 无角色的员工默认可以查看，但只能查看所在工厂的数据
+        return {
+            "can_view": True,
+            "data_access_scope": employee.data_access_scope or "factory",
+            "factory_id": employee.factory_id if (employee.data_access_scope or "factory") == "factory" else None
+        }

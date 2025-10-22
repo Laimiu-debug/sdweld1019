@@ -115,6 +115,24 @@ const MembershipCurrent: React.FC = () => {
         equipment: 100,
         storage: 5000,
       },
+      enterprise_pro: {
+        wps: 400,
+        pqr: 400,
+        ppqr: 400,
+        materials: 1000,
+        welders: 500,
+        equipment: 200,
+        storage: 10000,
+      },
+      enterprise_pro_max: {
+        wps: 500,
+        pqr: 500,
+        ppqr: 500,
+        materials: 2000,
+        welders: 1000,
+        equipment: 500,
+        storage: 20000,
+      },
       // 兼容旧的等级名称
       free: {
         wps: 10,
@@ -259,39 +277,47 @@ const MembershipCurrent: React.FC = () => {
     {
       key: 'wps',
       type: 'WPS记录',
-      used: usageStats?.wps || 0,
+      used: membershipInfo?.quotas?.wps?.used ?? usageStats?.wps ?? 0,
       limit: membershipInfo?.quotas?.wps?.limit || currentLimits.wps,
-      usage: membershipInfo?.quotas?.wps ?
-        Math.round((membershipInfo.quotas.wps.used / membershipInfo.quotas.wps.limit) * 100) :
-        Math.round(((usageStats?.wps || 0) / currentLimits.wps) * 100),
+      usage: (() => {
+        const used = membershipInfo?.quotas?.wps?.used ?? usageStats?.wps ?? 0
+        const limit = membershipInfo?.quotas?.wps?.limit || currentLimits.wps
+        return limit > 0 ? Math.round((used / limit) * 100) : 0
+      })(),
     },
     {
       key: 'pqr',
       type: 'PQR记录',
-      used: usageStats?.pqr || 0,
+      used: membershipInfo?.quotas?.pqr?.used ?? usageStats?.pqr ?? 0,
       limit: membershipInfo?.quotas?.pqr?.limit || currentLimits.pqr,
-      usage: membershipInfo?.quotas?.pqr ?
-        Math.round((membershipInfo.quotas.pqr.used / membershipInfo.quotas.pqr.limit) * 100) :
-        Math.round(((usageStats?.pqr || 0) / currentLimits.pqr) * 100),
+      usage: (() => {
+        const used = membershipInfo?.quotas?.pqr?.used ?? usageStats?.pqr ?? 0
+        const limit = membershipInfo?.quotas?.pqr?.limit || currentLimits.pqr
+        return limit > 0 ? Math.round((used / limit) * 100) : 0
+      })(),
     },
     // 根据会员等级决定是否显示pPQR配额
-    ...(currentTier !== 'free' && currentTier !== 'personal_free' ? [{
+    ...((currentTier !== 'free' && currentTier !== 'personal_free') || (membershipInfo?.quotas?.ppqr?.limit && membershipInfo.quotas.ppqr.limit > 0) ? [{
       key: 'ppqr',
       type: 'pPQR记录',
-      used: usageStats?.ppqr || 0,
+      used: membershipInfo?.quotas?.ppqr?.used ?? usageStats?.ppqr ?? 0,
       limit: membershipInfo?.quotas?.ppqr?.limit || currentLimits.ppqr,
-      usage: membershipInfo?.quotas?.ppqr ?
-        Math.round((membershipInfo.quotas.ppqr.used / membershipInfo.quotas.ppqr.limit) * 100) :
-        (currentLimits.ppqr > 0 ? Math.round(((usageStats?.ppqr || 0) / currentLimits.ppqr) * 100) : 0),
+      usage: (() => {
+        const used = membershipInfo?.quotas?.ppqr?.used ?? usageStats?.ppqr ?? 0
+        const limit = membershipInfo?.quotas?.ppqr?.limit || currentLimits.ppqr
+        return limit > 0 ? Math.round((used / limit) * 100) : 0
+      })(),
     }] : []),
     {
       key: 'storage',
       type: '存储空间',
-      used: `${usageStats?.storage || 0}MB`,
+      used: `${membershipInfo?.quotas?.storage?.used ?? usageStats?.storage ?? 0}MB`,
       limit: `${membershipInfo?.quotas?.storage?.limit || currentLimits.storage}MB`,
-      usage: membershipInfo?.quotas?.storage ?
-        Math.round((membershipInfo.quotas.storage.used / membershipInfo.quotas.storage.limit) * 100) :
-        Math.round(((usageStats?.storage || 0) / currentLimits.storage) * 100),
+      usage: (() => {
+        const used = membershipInfo?.quotas?.storage?.used ?? usageStats?.storage ?? 0
+        const limit = membershipInfo?.quotas?.storage?.limit || currentLimits.storage
+        return limit > 0 ? Math.round((used / limit) * 100) : 0
+      })(),
     },
   ]
 
@@ -350,46 +376,84 @@ const MembershipCurrent: React.FC = () => {
 
                   <div>
                     <Text strong>订阅状态: </Text>
-                    <Tag color={getSubscriptionStatusColor(membershipInfo?.subscription_status || (user as any)?.subscription_status || 'inactive')}>
-                      {getSubscriptionStatusName(membershipInfo?.subscription_status || (user as any)?.subscription_status || 'inactive')}
+                    <Tag color={getSubscriptionStatusColor(
+                      membershipInfo?.subscription_status ||
+                      (user as any)?.subscription_status ||
+                      'inactive'
+                    )}>
+                      {getSubscriptionStatusName(
+                        membershipInfo?.subscription_status ||
+                        (user as any)?.subscription_status ||
+                        'inactive'
+                      )}
                     </Tag>
                   </div>
                   <div>
                     <Text strong>订阅开始日期: </Text>
                     <Text>
-                      {membershipInfo?.subscription_start_date
-                        ? dayjs(membershipInfo.subscription_start_date).format('YYYY-MM-DD')
-                        : ((user as any)?.subscription_start_date ? dayjs((user as any).subscription_start_date).format('YYYY-MM-DD') :
-                           (user?.created_at ? dayjs(user.created_at).format('YYYY-MM-DD') : '注册日期'))
-                      }
+                      {(() => {
+                        // 优先使用 membershipInfo 中的数据
+                        if (membershipInfo?.subscription_start_date) {
+                          return dayjs(membershipInfo.subscription_start_date).format('YYYY-MM-DD')
+                        }
+
+                        // 其次使用 user 对象中的数据
+                        if ((user as any)?.subscription_start_date) {
+                          return dayjs((user as any).subscription_start_date).format('YYYY-MM-DD')
+                        }
+
+                        // 最后使用注册日期
+                        if (user?.created_at) {
+                          return dayjs(user.created_at).format('YYYY-MM-DD')
+                        }
+
+                        return '未设置'
+                      })()}
                     </Text>
                   </div>
                   <div>
                     <Text strong>订阅结束日期: </Text>
                     <Text>
                       {(() => {
-                        const tier = membershipInfo?.membership_tier || (user as any)?.member_tier || user?.membership_tier || 'personal_free'
+                        const tier = membershipInfo?.membership_tier ||
+                                    (user as any)?.member_tier ||
+                                    user?.membership_tier ||
+                                    'personal_free'
 
+                        // 免费版永久有效
                         if (tier === 'free' || tier === 'personal_free') {
                           return '永久有效'
                         }
 
+                        // 优先使用 membershipInfo 中的数据
                         if (membershipInfo?.subscription_end_date) {
                           return dayjs(membershipInfo.subscription_end_date).format('YYYY-MM-DD')
                         }
 
+                        // 其次使用 user 对象中的数据
                         if ((user as any)?.subscription_end_date) {
                           return dayjs((user as any).subscription_end_date).format('YYYY-MM-DD')
                         }
 
+                        // 付费版但没有结束日期，显示未订阅
                         return '未订阅'
                       })()}
                     </Text>
                   </div>
                   <div>
                     <Text strong>自动续费: </Text>
-                    <Tag color={membershipInfo?.auto_renewal || (user as any)?.auto_renewal ? 'success' : 'default'}>
-                      {membershipInfo?.auto_renewal || (user as any)?.auto_renewal ? '已开启' : '已关闭'}
+                    <Tag color={
+                      (membershipInfo?.auto_renewal !== undefined
+                        ? membershipInfo.auto_renewal
+                        : (user as any)?.auto_renewal)
+                      ? 'success'
+                      : 'default'
+                    }>
+                      {(membershipInfo?.auto_renewal !== undefined
+                        ? membershipInfo.auto_renewal
+                        : (user as any)?.auto_renewal)
+                      ? '已开启'
+                      : '已关闭'}
                     </Tag>
                   </div>
                 </Space>
@@ -506,83 +570,96 @@ const MembershipCurrent: React.FC = () => {
 
           <Card title="会员权益" className="mt-6">
             <Space direction="vertical" size="small" className="w-full">
-              {/* 基础功能权益 */}
-              <div>
-                <CheckCircleOutlined style={{ color: '#52c41a', marginRight: 8 }} />
-                <Text>WPS管理模块（{getMembershipLimits((user as any)?.member_tier || user?.membership_tier || 'personal_free').wps}个）</Text>
-              </div>
-              <div>
-                <CheckCircleOutlined style={{ color: '#52c41a', marginRight: 8 }} />
-                <Text>PQR管理模块（{getMembershipLimits((user as any)?.member_tier || user?.membership_tier || 'personal_free').pqr}个）</Text>
-              </div>
-
-              {/* 根据会员等级显示高级功能 */}
-              {(() => {
-                const tier = membershipInfo?.membership_tier || (user as any)?.member_tier || user?.membership_tier || 'personal_free'
-                return tier !== 'free' && tier !== 'personal_free'
-              })() && (
-                <>
-                  <div>
+              {/* 如果有从API获取的features，优先显示 */}
+              {membershipInfo?.features && membershipInfo.features.length > 0 ? (
+                membershipInfo.features.map((feature, index) => (
+                  <div key={index}>
                     <CheckCircleOutlined style={{ color: '#52c41a', marginRight: 8 }} />
-                    <Text>pPQR管理模块（{getMembershipLimits((user as any)?.member_tier || user?.membership_tier || 'personal_free').ppqr}个）</Text>
+                    <Text>{feature}</Text>
                   </div>
-                  <div>
-                    <CheckCircleOutlined style={{ color: '#52c41a', marginRight: 8 }} />
-                    <Text>焊材管理模块</Text>
-                  </div>
-                  <div>
-                    <CheckCircleOutlined style={{ color: '#52c41a', marginRight: 8 }} />
-                    <Text>焊工管理模块</Text>
-                  </div>
-                </>
-              )}
-
-              {/* 高级版及以上显示生产管理模块 */}
-              {(() => {
-                const tier = membershipInfo?.membership_tier || (user as any)?.member_tier || user?.membership_tier || 'personal_free'
-                return tier === 'personal_advanced' || tier === 'personal_flagship' || tier.startsWith('enterprise')
-              })() && (
-                <>
-                  <div>
-                    <CheckCircleOutlined style={{ color: '#52c41a', marginRight: 8 }} />
-                    <Text>生产管理模块</Text>
-                  </div>
-                  <div>
-                    <CheckCircleOutlined style={{ color: '#52c41a', marginRight: 8 }} />
-                    <Text>设备管理模块</Text>
-                  </div>
-                  <div>
-                    <CheckCircleOutlined style={{ color: '#52c41a', marginRight: 8 }} />
-                    <Text>质量管理模块</Text>
-                  </div>
-                </>
-              )}
-
-              {/* 旗舰版及以上显示报表统计 */}
-              {(() => {
-                const tier = membershipInfo?.membership_tier || (user as any)?.member_tier || user?.membership_tier || 'personal_free'
-                return tier === 'personal_flagship' || tier.startsWith('enterprise')
-              })() && (
-                <div>
-                  <CheckCircleOutlined style={{ color: '#52c41a', marginRight: 8 }} />
-                  <Text>报表统计模块</Text>
-                </div>
-              )}
-
-              {/* 企业版显示员工管理 */}
-              {(() => {
-                const tier = membershipInfo?.membership_tier || (user as any)?.member_tier || user?.membership_tier || 'personal_free'
-                return tier.startsWith('enterprise')
-              })() ? (
-                <div>
-                  <CheckCircleOutlined style={{ color: '#52c41a', marginRight: 8 }} />
-                  <Text>企业员工管理模块</Text>
-                </div>
+                ))
               ) : (
-                <div style={{ opacity: 0.5 }}>
-                  <CheckCircleOutlined style={{ color: '#d9d9d9', marginRight: 8 }} />
-                  <Text type="secondary">企业员工管理模块（升级到企业版解锁）</Text>
-                </div>
+                <>
+                  {/* 基础功能权益 */}
+                  <div>
+                    <CheckCircleOutlined style={{ color: '#52c41a', marginRight: 8 }} />
+                    <Text>WPS管理模块（{membershipInfo?.quotas?.wps?.limit || limits.wps}个）</Text>
+                  </div>
+                  <div>
+                    <CheckCircleOutlined style={{ color: '#52c41a', marginRight: 8 }} />
+                    <Text>PQR管理模块（{membershipInfo?.quotas?.pqr?.limit || limits.pqr}个）</Text>
+                  </div>
+
+                  {/* 根据会员等级显示高级功能 */}
+                  {(() => {
+                    const tier = membershipInfo?.membership_tier || (user as any)?.member_tier || user?.membership_tier || 'personal_free'
+                    const ppqrLimit = membershipInfo?.quotas?.ppqr?.limit || limits.ppqr
+                    return tier !== 'free' && tier !== 'personal_free' && ppqrLimit > 0
+                  })() && (
+                    <>
+                      <div>
+                        <CheckCircleOutlined style={{ color: '#52c41a', marginRight: 8 }} />
+                        <Text>pPQR管理模块（{membershipInfo?.quotas?.ppqr?.limit || limits.ppqr}个）</Text>
+                      </div>
+                      <div>
+                        <CheckCircleOutlined style={{ color: '#52c41a', marginRight: 8 }} />
+                        <Text>焊材管理模块</Text>
+                      </div>
+                      <div>
+                        <CheckCircleOutlined style={{ color: '#52c41a', marginRight: 8 }} />
+                        <Text>焊工管理模块</Text>
+                      </div>
+                    </>
+                  )}
+
+                  {/* 高级版及以上显示生产管理模块 */}
+                  {(() => {
+                    const tier = membershipInfo?.membership_tier || (user as any)?.member_tier || user?.membership_tier || 'personal_free'
+                    return tier === 'personal_advanced' || tier === 'personal_flagship' || tier.startsWith('enterprise')
+                  })() && (
+                    <>
+                      <div>
+                        <CheckCircleOutlined style={{ color: '#52c41a', marginRight: 8 }} />
+                        <Text>生产管理模块</Text>
+                      </div>
+                      <div>
+                        <CheckCircleOutlined style={{ color: '#52c41a', marginRight: 8 }} />
+                        <Text>设备管理模块</Text>
+                      </div>
+                      <div>
+                        <CheckCircleOutlined style={{ color: '#52c41a', marginRight: 8 }} />
+                        <Text>质量管理模块</Text>
+                      </div>
+                    </>
+                  )}
+
+                  {/* 旗舰版及以上显示报表统计 */}
+                  {(() => {
+                    const tier = membershipInfo?.membership_tier || (user as any)?.member_tier || user?.membership_tier || 'personal_free'
+                    return tier === 'personal_flagship' || tier.startsWith('enterprise')
+                  })() && (
+                    <div>
+                      <CheckCircleOutlined style={{ color: '#52c41a', marginRight: 8 }} />
+                      <Text>报表统计模块</Text>
+                    </div>
+                  )}
+
+                  {/* 企业版显示员工管理 */}
+                  {(() => {
+                    const tier = membershipInfo?.membership_tier || (user as any)?.member_tier || user?.membership_tier || 'personal_free'
+                    return tier.startsWith('enterprise')
+                  })() ? (
+                    <div>
+                      <CheckCircleOutlined style={{ color: '#52c41a', marginRight: 8 }} />
+                      <Text>企业员工管理模块</Text>
+                    </div>
+                  ) : (
+                    <div style={{ opacity: 0.5 }}>
+                      <CheckCircleOutlined style={{ color: '#d9d9d9', marginRight: 8 }} />
+                      <Text type="secondary">企业员工管理模块（升级到企业版解锁）</Text>
+                    </div>
+                  )}
+                </>
               )}
             </Space>
           </Card>

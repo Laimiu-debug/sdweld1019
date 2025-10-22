@@ -38,8 +38,6 @@ export const MembershipProvider: React.FC<{ children: ReactNode }> = ({ children
   const updateMembershipForWorkspace = async (workspace: Workspace, userMembershipType: string) => {
     if (!user || !workspace) return
 
-    console.log('更新会员信息:', { workspaceId: workspace.id, workspaceType: workspace.type, userMembershipType })
-
     try {
       // 确定当前工作区的会员等级
       const currentTier = membershipService.determineWorkspaceMembership(
@@ -73,8 +71,6 @@ export const MembershipProvider: React.FC<{ children: ReactNode }> = ({ children
         ...newMembershipInfo,
         lastUpdated: newMembershipInfo.lastUpdated.toISOString()
       }))
-
-      console.log('会员信息已更新:', newMembershipInfo)
     } catch (error) {
       console.error('更新会员信息失败:', error)
       message.error('更新会员信息失败')

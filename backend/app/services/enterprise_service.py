@@ -320,7 +320,14 @@ class EnterpriseService:
     # ==================== Helper Methods ====================
     
     def _get_tier_limits(self, tier: str) -> Dict[str, int]:
-        """根据会员等级获取配额限制"""
+        """
+        根据会员等级获取配额限制
+
+        根据 MEMBERSHIP_TIERS_CORRECTION.md 文档：
+        - 企业版：10人员工，1个工厂
+        - 企业版PRO：20人员工，3个工厂
+        - 企业版PRO MAX：50人员工，5个工厂
+        """
         limits = {
             "enterprise": {
                 "max_factories": 1,
@@ -330,15 +337,15 @@ class EnterpriseService:
             },
             "enterprise_pro": {
                 "max_factories": 3,
+                "max_employees": 20,
+                "max_wps_records": 400,
+                "max_pqr_records": 400
+            },
+            "enterprise_pro_max": {
+                "max_factories": 5,
                 "max_employees": 50,
                 "max_wps_records": 500,
                 "max_pqr_records": 500
-            },
-            "enterprise_pro_max": {
-                "max_factories": 10,
-                "max_employees": 200,
-                "max_wps_records": 1000,
-                "max_pqr_records": 1000
             }
         }
         return limits.get(tier, limits["enterprise"])

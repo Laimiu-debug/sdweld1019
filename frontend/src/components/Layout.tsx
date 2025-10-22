@@ -117,46 +117,37 @@ const Layout: React.FC<LayoutProps> = () => {
   // 加载当前工作区信息
   useEffect(() => {
     if (user && !isGuestMode) {
-      console.log('=== Layout 开始加载工作区 ===')
       const loadCurrentWorkspace = async () => {
         try {
           // 优先使用本地存储，避免覆盖用户手动切换的工作区
           const storedWorkspace = workspaceService.getCurrentWorkspaceFromStorage()
-          console.log('Layout 检查本地存储的工作区:', storedWorkspace)
 
           if (storedWorkspace) {
-            console.log('Layout 直接使用本地存储的工作区:', storedWorkspace.name)
             setCurrentWorkspace(storedWorkspace)
             // 不再从服务器获取，避免覆盖用户选择的工作区
             return
           }
 
-          console.log('Layout 没有本地存储，从服务器获取工作区')
           // 只有本地存储不存在时才从服务器获取
           const response = await workspaceService.getCurrentWorkspace()
           if (response && response.data) {
             setCurrentWorkspace(response.data)
             workspaceService.saveCurrentWorkspaceToStorage(response.data)
-            console.log('Layout 设置了服务器返回的工作区:', response.data.name)
           } else if (response && !response.success) {
             setCurrentWorkspace(response)
             workspaceService.saveCurrentWorkspaceToStorage(response)
-            console.log('Layout 设置了直接返回的工作区:', response.name)
           }
         } catch (error) {
           console.error('Layout 加载工作区失败:', error)
           // 如果服务器获取失败，尝试获取默认工作区
           try {
-            console.log('Layout 尝试获取默认工作区')
             const response = await workspaceService.getDefaultWorkspace()
             if (response && response.data) {
               setCurrentWorkspace(response.data)
               workspaceService.saveCurrentWorkspaceToStorage(response.data)
-              console.log('Layout 设置了默认工作区:', response.data.name)
             } else if (response && !response.success) {
               setCurrentWorkspace(response)
               workspaceService.saveCurrentWorkspaceToStorage(response)
-              console.log('Layout 设置了直接返回的默认工作区:', response.name)
             }
           } catch (defaultError) {
             console.error('Layout 获取默认工作区失败:', defaultError)
@@ -275,14 +266,6 @@ const Layout: React.FC<LayoutProps> = () => {
           key: '/materials',
           label: '焊材列表',
         },
-        ...(checkPermission('materials.create')
-          ? [
-              {
-                key: '/materials/create',
-                label: '添加焊材',
-              },
-            ]
-          : []),
       ],
       hidden: isGuestMode ? true : !checkPermission('materials.read'),
     },
@@ -295,14 +278,6 @@ const Layout: React.FC<LayoutProps> = () => {
           key: '/welders',
           label: '焊工列表',
         },
-        ...(checkPermission('welders.create')
-          ? [
-              {
-                key: '/welders/create',
-                label: '添加焊工',
-              },
-            ]
-          : []),
       ],
       hidden: isGuestMode ? true : !checkPermission('welders.read'),
     },
@@ -315,14 +290,6 @@ const Layout: React.FC<LayoutProps> = () => {
           key: '/equipment',
           label: '设备列表',
         },
-        ...(checkPermission('equipment.create')
-          ? [
-              {
-                key: '/equipment/create',
-                label: '添加设备',
-              },
-            ]
-          : []),
       ],
       hidden: isGuestMode ? true : !checkPermission('equipment.read'),
     },
@@ -335,14 +302,6 @@ const Layout: React.FC<LayoutProps> = () => {
           key: '/production',
           label: '生产任务',
         },
-        ...(checkPermission('production.create')
-          ? [
-              {
-                key: '/production/create',
-                label: '创建任务',
-              },
-            ]
-          : []),
       ],
       hidden: isGuestMode ? true : !checkPermission('production.read'),
     },
@@ -355,14 +314,6 @@ const Layout: React.FC<LayoutProps> = () => {
           key: '/quality',
           label: '质量检验',
         },
-        ...(checkPermission('quality.create')
-          ? [
-              {
-                key: '/quality/create',
-                label: '创建检验',
-              },
-            ]
-          : []),
       ],
       hidden: isGuestMode ? true : !checkPermission('quality.read'),
     },
@@ -730,7 +681,6 @@ const Layout: React.FC<LayoutProps> = () => {
                   onPressEnter={(e) => {
                     if (searchValue.trim()) {
                       // 这里可以实现搜索逻辑
-                      console.log('搜索:', searchValue)
                     }
                   }}
                   className="search-input"
@@ -811,9 +761,11 @@ const Layout: React.FC<LayoutProps> = () => {
             {/* 工作区切换器 - 显示当前工作区 */}
             {!isMobile && (
               <div style={{
-                width: '160px',
+                width: 'auto',
+                minWidth: '180px',
+                maxWidth: '220px',
                 flexShrink: 0,
-                marginRight: '4px',
+                marginRight: '8px',
                 overflow: 'hidden'
               }}>
                 <WorkspaceSwitcher
@@ -841,7 +793,8 @@ const Layout: React.FC<LayoutProps> = () => {
             <div className="user-profile" style={{
               flexShrink: 0,
               width: 'auto',
-              maxWidth: '140px'
+              minWidth: '120px',
+              maxWidth: '180px'
             }}>
               <Dropdown
                 menu={{ items: userMenuItems }}
@@ -849,7 +802,7 @@ const Layout: React.FC<LayoutProps> = () => {
                 arrow
                 trigger={['click']}
               >
-                <div className="user-info" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="user-info" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                   <Avatar
                     size={28}
                     src={user?.avatar_url}
@@ -868,21 +821,21 @@ const Layout: React.FC<LayoutProps> = () => {
                         color: '#1e293b',
                         whiteSpace: 'nowrap',
                         overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        maxWidth: '100px'
+                        textOverflow: 'ellipsis'
                       }}>
                         {isGuestMode ? '访客用户' : (user?.full_name || user?.username)}
                       </div>
-                      <div className="user-role" style={{
-                        fontSize: '11px',
-                        color: '#64748b',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        maxWidth: '100px'
-                      }}>
-                        {isGuestMode ? '游客模式' : (user?.is_admin ? '管理员' : '用户')}
-                      </div>
+                      {isGuestMode && (
+                        <div className="user-role" style={{
+                          fontSize: '11px',
+                          color: '#64748b',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis'
+                        }}>
+                          游客模式
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

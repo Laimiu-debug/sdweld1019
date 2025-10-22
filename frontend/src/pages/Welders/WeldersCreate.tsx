@@ -26,6 +26,7 @@ import {
 import { Welder } from '@/types'
 import { useAuthStore } from '@/store/authStore'
 import dayjs from 'dayjs'
+import weldersService from '@/services/welders'
 
 const { Title, Text } = Typography
 const { Option } = Select
@@ -142,17 +143,70 @@ const WeldersCreate: React.FC = () => {
       // 获取所有表单数据
       const allValues = form.getFieldsValue()
       const finalData = { ...formData, ...allValues }
-      
-      // 这里应该调用实际的API创建焊工
-      console.log('Creating Welder with data:', finalData)
-      
-      // 模拟API调用
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      
-      message.success('焊工添加成功')
-      navigate('/welders')
-    } catch (error) {
-      message.error('添加失败，请稍后重试')
+
+      // 转换数据格式以匹配后端API
+      const apiData = {
+        welder_code: finalData.welder_code,
+        full_name: finalData.full_name,
+        english_name: finalData.english_name,
+        gender: finalData.gender,
+        date_of_birth: finalData.date_of_birth ? finalData.date_of_birth.format('YYYY-MM-DD') : undefined,
+
+        // 身份信息
+        id_type: finalData.id_type || '身份证',
+        id_number: finalData.id_number,
+        nationality: finalData.nationality || '中国',
+
+        // 联系信息
+        phone: finalData.phone,
+        email: finalData.email,
+        emergency_contact: finalData.emergency_contact,
+        emergency_phone: finalData.emergency_phone,
+        address: finalData.address,
+
+        // 雇佣信息
+        employee_number: finalData.employee_number,
+        department: finalData.department,
+        position: finalData.position,
+        hire_date: finalData.hire_date ? finalData.hire_date.format('YYYY-MM-DD') : undefined,
+        work_experience_years: finalData.work_experience_years,
+
+        // 技能等级
+        skill_level: finalData.skill_level,
+        specialization: finalData.specialization,
+        qualified_processes: finalData.qualified_processes ? JSON.stringify(finalData.qualified_processes) : undefined,
+        qualified_positions: finalData.qualified_positions ? JSON.stringify(finalData.qualified_positions) : undefined,
+        qualified_materials: finalData.qualified_materials ? JSON.stringify(finalData.qualified_materials) : undefined,
+
+        // 主要证书信息
+        primary_certification_number: finalData.certification_number,
+        primary_certification_level: finalData.certification_level,
+        primary_certification_date: finalData.certification_date ? finalData.certification_date.format('YYYY-MM-DD') : undefined,
+        primary_expiry_date: finalData.expiry_date ? finalData.expiry_date.format('YYYY-MM-DD') : undefined,
+        primary_issuing_authority: finalData.issuing_authority,
+
+        // 状态信息
+        status: 'active',
+        certification_status: 'valid',
+
+        // 附加信息
+        description: finalData.special_skills,
+        notes: finalData.notes,
+        tags: finalData.tags,
+      }
+
+      // 调用API创建焊工
+      const response = await weldersService.create(apiData)
+
+      if (response.success) {
+        message.success('焊工添加成功')
+        navigate('/welders')
+      } else {
+        message.error(response.message || '添加失败')
+      }
+    } catch (error: any) {
+      console.error('创建焊工失败:', error)
+      message.error(error.response?.data?.detail || '添加失败，请稍后重试')
     } finally {
       setLoading(false)
     }

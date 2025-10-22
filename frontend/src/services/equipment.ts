@@ -175,6 +175,7 @@ export interface EquipmentListParams {
   equipment_type?: EquipmentType
   status?: EquipmentStatus
   factory_id?: number
+  workspace_type?: 'personal' | 'company'
 }
 
 // 设备统计信息
@@ -220,6 +221,7 @@ class EquipmentService {
     if (params?.equipment_type) queryParams.append('equipment_type', params.equipment_type)
     if (params?.status) queryParams.append('status', params.status)
     if (params?.factory_id) queryParams.append('factory_id', params.factory_id.toString())
+    if (params?.workspace_type) queryParams.append('workspace_type', params.workspace_type)
 
     const url = `/equipment${queryParams.toString() ? `?${queryParams.toString()}` : ''}`
     const response = await apiService.get<PaginatedResponse<Equipment>>(url)
@@ -239,15 +241,43 @@ class EquipmentService {
    * 创建新设备
    */
   async createEquipment(data: CreateEquipmentData): Promise<ApiResponse<Equipment>> {
-    const response = await apiService.post<Equipment>('/equipment', data)
+    // 获取当前工作区类型
+    const currentWorkspace = this.getCurrentWorkspace()
+    const workspaceType = currentWorkspace?.type === 'enterprise' ? 'company' : 'personal'
+
+    // 添加工作区类型参数到URL
+    const response = await apiService.post<Equipment>(
+      `/equipment?workspace_type=${workspaceType}`,
+      data
+    )
     return response.data
+  }
+
+  /**
+   * 获取当前工作区（从本地存储）
+   */
+  private getCurrentWorkspace() {
+    try {
+      const workspaceData = localStorage.getItem('current_workspace')
+      return workspaceData ? JSON.parse(workspaceData) : null
+    } catch (error) {
+      console.error('获取当前工作区失败:', error)
+      return null
+    }
   }
 
   /**
    * 更新设备信息
    */
   async updateEquipment(equipmentId: string, data: UpdateEquipmentData): Promise<ApiResponse<Equipment>> {
-    const response = await apiService.put<Equipment>(`/equipment/${equipmentId}`, data)
+    // 获取当前工作区类型
+    const currentWorkspace = this.getCurrentWorkspace()
+    const workspaceType = currentWorkspace?.type === 'enterprise' ? 'company' : 'personal'
+
+    const response = await apiService.put<Equipment>(
+      `/equipment/${equipmentId}?workspace_type=${workspaceType}`,
+      data
+    )
     return response.data
   }
 
@@ -255,7 +285,13 @@ class EquipmentService {
    * 删除设备
    */
   async deleteEquipment(equipmentId: string): Promise<ApiResponse<void>> {
-    const response = await apiService.delete<void>(`/equipment/${equipmentId}`)
+    // 获取当前工作区类型
+    const currentWorkspace = this.getCurrentWorkspace()
+    const workspaceType = currentWorkspace?.type === 'enterprise' ? 'company' : 'personal'
+
+    const response = await apiService.delete<void>(
+      `/equipment/${equipmentId}?workspace_type=${workspaceType}`
+    )
     return response.data
   }
 
@@ -275,7 +311,13 @@ class EquipmentService {
    * 获取设备统计信息
    */
   async getEquipmentStatistics(): Promise<ApiResponse<EquipmentStatistics>> {
-    const response = await apiService.get<EquipmentStatistics>('/equipment/statistics/overview')
+    // 获取当前工作区类型
+    const currentWorkspace = this.getCurrentWorkspace()
+    const workspaceType = currentWorkspace?.type === 'enterprise' ? 'company' : 'personal'
+
+    const response = await apiService.get<EquipmentStatistics>(
+      `/equipment/statistics/overview?workspace_type=${workspaceType}`
+    )
     return response.data
   }
 

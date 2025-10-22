@@ -91,7 +91,6 @@ const PersonalCenter: React.FC = () => {
       }
 
       const apiResponse = await response.json()
-      console.log('Workspaces API response:', apiResponse) // 调试日志
 
       // 处理API响应格式 - 后端直接返回数组
       let workspaceData: any[] = []
@@ -101,8 +100,6 @@ const PersonalCenter: React.FC = () => {
       } else if (apiResponse?.success && apiResponse?.data) {
         // 兼容ApiResponse格式
         workspaceData = Array.isArray(apiResponse.data) ? apiResponse.data : [apiResponse.data]
-      } else {
-        console.warn('工作区API响应格式异常:', apiResponse)
       }
 
       // 转换API数据为前端格式
@@ -188,17 +185,13 @@ const PersonalCenter: React.FC = () => {
         }
       })
 
-      console.log('PersonalCenter合并后的工作区:', uniqueWorkspaces)
       setWorkspaces(uniqueWorkspaces as any)
 
       // 异步更新企业工作区的真实成员数
       uniqueWorkspaces.forEach(async (workspace) => {
         if (workspace.type === 'enterprise') {
           try {
-            console.log('获取企业工作区真实成员数:', workspace.id)
             const employeeResponse = await enterpriseService.getEmployees({ page: 1, page_size: 100 })
-            console.log('员工API完整响应:', employeeResponse)
-            console.log('员工API的data字段:', JSON.stringify(employeeResponse?.data, null, 2))
 
             let employees = []
             if (employeeResponse?.data?.employees) {
@@ -210,44 +203,31 @@ const PersonalCenter: React.FC = () => {
             } else if (employeeResponse?.success && employeeResponse?.data?.data?.items) {
               // 嵌套格式：data.data.items
               employees = employeeResponse.data.data.items
-              console.log('找到员工数据在字段: data.data.items', employees)
             } else if (employeeResponse?.success && employeeResponse?.data) {
               // 其他格式，尝试从data中提取各种可能的字段
               const data = employeeResponse.data
-              console.log('尝试从data中查找员工数据字段...')
-
               // 尝试所有可能的员工数据字段
               const possibleFields = ['employees', 'items', 'list', 'data', 'results', 'users', 'staff']
               for (const field of possibleFields) {
                 if (data[field] && Array.isArray(data[field])) {
                   employees = data[field]
-                  console.log(`找到员工数据在字段: ${field}`, employees)
                   break
                 }
               }
             }
 
-            console.log('解析出的员工数据:', employees)
-            console.log('员工数据数量:', employees.length)
-
             if (employees.length > 0) {
               const uniqueUserIds = new Set(employees.map((emp: any) => emp.user_id))
-              console.log('去重后的用户ID:', Array.from(uniqueUserIds))
-              console.log('企业工作区真实成员数:', workspace.id, uniqueUserIds.size)
 
               // 更新工作区的成员数量
               setWorkspaces(prev => {
-                console.log('更新前的工作区成员数:', prev.find(w => w.id === workspace.id)?.member_count)
                 const updated = prev.map(w =>
                   w.id === workspace.id
                     ? { ...w, member_count: uniqueUserIds.size }
                     : w
                 )
-                console.log('更新后的工作区成员数:', updated.find(w => w.id === workspace.id)?.member_count)
                 return updated
               })
-            } else {
-              console.log('员工API响应中没有员工数据，响应结构:', employeeResponse)
             }
           } catch (error) {
             console.error('获取企业成员数失败:', error)
@@ -257,32 +237,25 @@ const PersonalCenter: React.FC = () => {
 
       // 优先使用本地存储的当前工作区
       const storedWorkspace = workspaceService.getCurrentWorkspaceFromStorage()
-      console.log('PersonalCenter 检查本地存储的工作区:', storedWorkspace)
 
       if (storedWorkspace) {
         // 验证存储的工作区是否在当前工作区列表中
         const isValidWorkspace = formattedWorkspaceData.some(w => w.id === storedWorkspace.id)
-        console.log('PersonalCenter 本地存储工作区验证:', isValidWorkspace ? '有效' : '无效')
 
         if (isValidWorkspace) {
-          console.log('PersonalCenter 直接使用本地存储的工作区:', storedWorkspace.name)
           setCurrentWorkspace(storedWorkspace)
           // 不再覆盖本地存储，避免与WorkspaceSwitcher冲突
         } else {
-          console.log('PersonalCenter 本地存储的工作区无效，重新选择')
           // 存储的工作区无效，使用活跃工作区或第一个
           const activeWorkspace = formattedWorkspaceData.find(w => w.status === 'active') || formattedWorkspaceData[0]
           setCurrentWorkspace(activeWorkspace)
           workspaceService.saveCurrentWorkspaceToStorage(activeWorkspace)
-          console.log('PersonalCenter 选择了新的工作区:', activeWorkspace.name)
         }
       } else {
-        console.log('PersonalCenter 没有本地存储，使用默认工作区')
         // 没有本地存储，使用活跃工作区或第一个
         const activeWorkspace = formattedWorkspaceData.find(w => w.status === 'active') || formattedWorkspaceData[0]
         setCurrentWorkspace(activeWorkspace)
         workspaceService.saveCurrentWorkspaceToStorage(activeWorkspace)
-        console.log('PersonalCenter 设置了默认工作区:', activeWorkspace.name)
       }
     } catch (error) {
       console.error('Failed to load workspaces:', error)
@@ -334,7 +307,6 @@ const PersonalCenter: React.FC = () => {
           window.location.reload()
         }, 1000)
       } else {
-        console.error('切换工作区响应格式异常:', response)
         message.error('切换工作区失败：响应格式错误')
       }
     } catch (error) {

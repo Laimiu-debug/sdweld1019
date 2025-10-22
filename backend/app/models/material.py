@@ -45,6 +45,16 @@ class AccessLevel(str, enum.Enum):
     PUBLIC = "public"  # 公开
 
 
+class TransactionType(str, enum.Enum):
+    """出入库类型"""
+    IN = "in"  # 入库
+    OUT = "out"  # 出库
+    ADJUST = "adjust"  # 调整
+    RETURN = "return"  # 退库
+    TRANSFER = "transfer"  # 调拨
+    CONSUME = "consume"  # 消耗（生产使用）
+
+
 class WeldingMaterial(Base):
     """焊材管理模型"""
     
@@ -235,4 +245,92 @@ class MaterialCategory(Base):
     
     def __repr__(self):
         return f"<MaterialCategory(id={self.id}, name={self.name})>"
+
+
+class MaterialTransaction(Base):
+    """焊材出入库记录模型"""
+
+    __tablename__ = "material_transactions"
+    __table_args__ = {'extend_existing': True}
+
+    # 主键
+    id = Column(Integer, primary_key=True, index=True)
+
+    # ==================== 数据隔离核心字段 ====================
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True, comment="操作用户ID")
+    workspace_type = Column(String(20), default="personal", index=True, comment="工作区类型")
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=True, index=True, comment="企业ID")
+    factory_id = Column(Integer, ForeignKey("factories.id", ondelete="SET NULL"), nullable=True, index=True, comment="工厂ID")
+
+    # ==================== 关联信息 ====================
+    material_id = Column(Integer, ForeignKey("welding_materials.id", ondelete="CASCADE"), nullable=False, index=True, comment="焊材ID")
+
+    # ==================== 交易信息 ====================
+    transaction_type = Column(String(50), nullable=False, index=True, comment="交易类型：in/out/adjust/return/transfer/consume")
+    transaction_number = Column(String(100), index=True, comment="交易单号")
+    transaction_date = Column(DateTime, default=datetime.utcnow, nullable=False, comment="交易日期")
+
+    # ==================== 数量信息 ====================
+    quantity = Column(Float, nullable=False, comment="数量（正数表示增加，负数表示减少）")
+    unit = Column(String(50), default="kg", comment="单位")
+    stock_before = Column(Float, nullable=False, comment="交易前库存")
+    stock_after = Column(Float, nullable=False, comment="交易后库存")
+
+    # ==================== 价格信息 ====================
+    unit_price = Column(Float, comment="单价")
+    total_price = Column(Float, comment="总金额")  # 注意：数据库中是total_price不是total_amount
+    currency = Column(String(10), default="CNY", comment="货币")
+
+    # ==================== 来源/去向信息 ====================
+    source = Column(String(255), comment="来源（供应商/仓库/部门等）")
+    destination = Column(String(255), comment="去向（仓库/部门/项目等）")
+
+    # ==================== 关联单据 ====================
+    reference_type = Column(String(50), comment="关联单据类型（采购单/生产任务/调拨单等）")
+    reference_id = Column(Integer, comment="关联单据ID")
+    reference_number = Column(String(100), comment="关联单据号")
+
+    # ==================== 批次信息 ====================
+    batch_number = Column(String(100), comment="批次号")
+    production_date = Column(DateTime, comment="生产日期")
+    expiry_date = Column(DateTime, comment="过期日期")
+
+    # ==================== 质检信息 ====================
+    quality_status = Column(String(20), comment="质检状态：pending/passed/failed")
+    quality_inspector = Column(String(100), comment="质检员")
+    quality_report = Column(Text, comment="质检报告")
+
+    # ==================== 存储信息 ====================
+    warehouse = Column(String(100), comment="仓库")
+    storage_location = Column(String(255), comment="存储位置")
+    shelf_number = Column(String(50), comment="货架号")
+    bin_location = Column(String(50), comment="货位")
+
+    # ==================== 其他信息 ====================
+    operator = Column(String(100), comment="操作员")
+    approver = Column(String(100), comment="审批人")
+    approval_status = Column(String(20), comment="审批状态：pending/approved/rejected")
+    approval_date = Column(DateTime, comment="审批日期")
+
+    notes = Column(Text, comment="备注")
+    attachments = Column(Text, comment="附件（JSON格式）")
+
+    # ==================== 状态 ====================
+    is_active = Column(Boolean, default=True, comment="是否有效")
+    is_cancelled = Column(Boolean, default=False, comment="是否已取消")
+    cancelled_at = Column(DateTime, comment="取消时间")
+    cancelled_by = Column(Integer, ForeignKey("users.id"), comment="取消人")
+    cancel_reason = Column(Text, comment="取消原因")
+
+    # ==================== 审计字段 ====================
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    # 关系
+    material = relationship("WeldingMaterial", backref="transactions")
+
+    def __repr__(self):
+        return f"<MaterialTransaction(id={self.id}, type={self.transaction_type}, material_id={self.material_id})>"
 

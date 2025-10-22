@@ -13,10 +13,19 @@ from app.core.data_access import WorkspaceContext, WorkspaceType
 
 class QuotaType:
     """配额类型常量"""
+    # 文档类模块 - 所有工作区都需要检查配额
     WPS = "wps"
     PQR = "pqr"
     PPQR = "ppqr"
+
+    # 物理资产类模块 - 个人工作区不检查配额
     EQUIPMENT = "equipment"
+    MATERIALS = "materials"
+    WELDERS = "welders"
+    PRODUCTION = "production"
+    QUALITY = "quality"
+
+    # 其他配额类型
     STORAGE = "storage"
     EMPLOYEES = "employees"
     FACTORIES = "factories"
@@ -37,19 +46,37 @@ class QuotaService:
     ) -> bool:
         """
         检查配额是否充足
-        
+
         Args:
             user: 用户对象
             workspace_context: 工作区上下文
             quota_type: 配额类型
             increment: 需要增加的数量
-            
+
         Returns:
             bool: 配额是否充足
-            
+
         Raises:
             HTTPException: 如果配额不足
+
+        Note:
+            个人工作区中，物理资产类模块（设备、焊材、焊工、生产、质量）不检查配额
+            文档类模块（WPS、PQR、pPQR）在所有工作区都检查配额
         """
+        # 定义物理资产类模块（个人工作区不检查配额）
+        physical_asset_modules = {
+            QuotaType.EQUIPMENT,
+            QuotaType.MATERIALS,
+            QuotaType.WELDERS,
+            QuotaType.PRODUCTION,
+            QuotaType.QUALITY
+        }
+
+        # 个人工作区：物理资产类模块跳过配额检查
+        if workspace_context.is_personal() and quota_type in physical_asset_modules:
+            return True
+
+        # 其他情况：正常检查配额
         if workspace_context.is_personal():
             return self._check_personal_quota(user, quota_type, increment)
         elif workspace_context.is_enterprise():
@@ -58,7 +85,7 @@ class QuotaService:
                 quota_type,
                 increment
             )
-        
+
         return False
     
     def _check_personal_quota(
@@ -97,14 +124,27 @@ class QuotaService:
         company = self.db.query(Company).filter(
             Company.id == company_id
         ).first()
-        
+
         if not company:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="企业不存在"
             )
-        
-        # 获取配额限制和使用情况
+
+        # 定义物理资产类模块（企业工作区不检查配额）
+        physical_asset_modules = {
+            QuotaType.EQUIPMENT,
+            QuotaType.MATERIALS,
+            QuotaType.WELDERS,
+            QuotaType.PRODUCTION,
+            QuotaType.QUALITY
+        }
+
+        # 企业工作区：物理资产类模块跳过配额检查
+        if quota_type in physical_asset_modules:
+            return True
+
+        # 获取配额限制和使用情况（只检查文档类模块）
         limit_mapping = {
             QuotaType.WPS: ("max_wps_records", "wps_quota_used"),
             QuotaType.PQR: ("max_pqr_records", "pqr_quota_used"),
@@ -113,20 +153,27 @@ class QuotaService:
             QuotaType.EMPLOYEES: ("max_employees", "employee_count"),
             QuotaType.FACTORIES: ("max_factories", "factory_count")
         }
-        
+
         if quota_type not in limit_mapping:
-            raise ValueError(f"不支持的配额类型: {quota_type}")
-        
+            # 如果是不支持的配额类型，直接返回True（不检查）
+            return True
+
         limit_field, used_field = limit_mapping[quota_type]
+
+        # 检查字段是否存在
+        if not hasattr(company, limit_field):
+            # 如果字段不存在，跳过检查
+            return True
+
         limit = getattr(company, limit_field, 0) or 0
         used = getattr(company, used_field, 0) or 0
-        
+
         if used + increment > limit:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"企业{quota_type}配额不足。已使用: {used}/{limit}"
             )
-        
+
         return True
     
     def increment_quota_usage(
@@ -138,13 +185,29 @@ class QuotaService:
     ):
         """
         增加配额使用量
-        
+
         Args:
             user: 用户对象
             workspace_context: 工作区上下文
             quota_type: 配额类型
             increment: 增加的数量
+
+        Note:
+            物理资产类模块（设备、焊材、焊工、生产、质量）在所有工作区都不跟踪配额使用量
         """
+        # 定义物理资产类模块
+        physical_asset_modules = {
+            QuotaType.EQUIPMENT,
+            QuotaType.MATERIALS,
+            QuotaType.WELDERS,
+            QuotaType.PRODUCTION,
+            QuotaType.QUALITY
+        }
+
+        # 物理资产类模块：跳过配额使用量更新（个人和企业工作区都跳过）
+        if quota_type in physical_asset_modules:
+            return
+
         if workspace_context.is_personal():
             self._increment_personal_quota(user, quota_type, increment)
         elif workspace_context.is_enterprise():
@@ -153,7 +216,7 @@ class QuotaService:
                 quota_type,
                 increment
             )
-        
+
         self.db.commit()
     
     def _increment_personal_quota(
@@ -181,27 +244,38 @@ class QuotaService:
         company = self.db.query(Company).filter(
             Company.id == company_id
         ).first()
-        
+
         if not company:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="企业不存在"
             )
-        
+
         used_mapping = {
             QuotaType.WPS: "wps_quota_used",
             QuotaType.PQR: "pqr_quota_used",
             QuotaType.PPQR: "ppqr_quota_used",
             QuotaType.EQUIPMENT: "equipment_quota_used",
+            QuotaType.MATERIALS: "materials_quota_used",
+            QuotaType.WELDERS: "welders_quota_used",
+            QuotaType.PRODUCTION: "production_quota_used",
+            QuotaType.QUALITY: "quality_quota_used",
             QuotaType.STORAGE: "storage_quota_used",
             QuotaType.EMPLOYEES: "employee_count",
             QuotaType.FACTORIES: "factory_count"
         }
-        
+
         if quota_type not in used_mapping:
-            raise ValueError(f"不支持的配额类型: {quota_type}")
-        
+            # 不支持的配额类型，直接返回
+            return
+
         used_field = used_mapping[quota_type]
+
+        # 检查字段是否存在
+        if not hasattr(company, used_field):
+            # 字段不存在，跳过更新
+            return
+
         current_used = getattr(company, used_field, 0) or 0
         setattr(company, used_field, current_used + increment)
     
@@ -214,13 +288,29 @@ class QuotaService:
     ):
         """
         减少配额使用量（删除数据时调用）
-        
+
         Args:
             user: 用户对象
             workspace_context: 工作区上下文
             quota_type: 配额类型
             decrement: 减少的数量
+
+        Note:
+            物理资产类模块（设备、焊材、焊工、生产、质量）在所有工作区都不跟踪配额使用量
         """
+        # 定义物理资产类模块
+        physical_asset_modules = {
+            QuotaType.EQUIPMENT,
+            QuotaType.MATERIALS,
+            QuotaType.WELDERS,
+            QuotaType.PRODUCTION,
+            QuotaType.QUALITY
+        }
+
+        # 物理资产类模块：跳过配额使用量更新（个人和企业工作区都跳过）
+        if quota_type in physical_asset_modules:
+            return
+
         if workspace_context.is_personal():
             self._decrement_personal_quota(user, quota_type, decrement)
         elif workspace_context.is_enterprise():
@@ -229,7 +319,7 @@ class QuotaService:
                 quota_type,
                 decrement
             )
-        
+
         self.db.commit()
     
     def _decrement_personal_quota(
@@ -258,24 +348,34 @@ class QuotaService:
         company = self.db.query(Company).filter(
             Company.id == company_id
         ).first()
-        
+
         if not company:
             return
-        
+
         used_mapping = {
             QuotaType.WPS: "wps_quota_used",
             QuotaType.PQR: "pqr_quota_used",
             QuotaType.PPQR: "ppqr_quota_used",
             QuotaType.EQUIPMENT: "equipment_quota_used",
+            QuotaType.MATERIALS: "materials_quota_used",
+            QuotaType.WELDERS: "welders_quota_used",
+            QuotaType.PRODUCTION: "production_quota_used",
+            QuotaType.QUALITY: "quality_quota_used",
             QuotaType.STORAGE: "storage_quota_used",
             QuotaType.EMPLOYEES: "employee_count",
             QuotaType.FACTORIES: "factory_count"
         }
-        
+
         if quota_type not in used_mapping:
             return
-        
+
         used_field = used_mapping[quota_type]
+
+        # 检查字段是否存在
+        if not hasattr(company, used_field):
+            # 字段不存在，跳过更新
+            return
+
         current_used = getattr(company, used_field, 0) or 0
         new_used = max(0, current_used - decrement)
         setattr(company, used_field, new_used)

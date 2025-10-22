@@ -35,18 +35,11 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
   // 加载工作区数据
   useEffect(() => {
     if (user) {
-      console.log('=== WorkspaceSwitcher 开始加载工作区 ===')
       loadWorkspaces()
     }
   }, [user])
 
-  // 监听当前工作区变化
-  useEffect(() => {
-    console.log('当前工作区状态变化:', currentWorkspace?.name, currentWorkspace?.id)
-  }, [currentWorkspace])
-
   const loadWorkspaces = async () => {
-    console.log('loadWorkspaces 开始执行')
     setLoading(true)
     try {
       // 获取工作区列表 - 后端直接返回数组
@@ -120,31 +113,26 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
         all_membership_tiers: membership_tiers
       }))
 
-      console.log('合并后的工作区（包含所有角色）:', uniqueWorkspaces)
+      // console.log('合并后的工作区（包含所有角色）:', uniqueWorkspaces) // 调试用
 
       setWorkspaces(uniqueWorkspaces)
 
       // 优先使用本地存储的当前工作区
       const storedWorkspace = workspaceService.getCurrentWorkspaceFromStorage()
-      console.log('检查本地存储的工作区:', storedWorkspace)
 
       if (storedWorkspace) {
         // 验证存储的工作区是否在当前工作区列表中
         const isValidWorkspace = workspaceData.some(w => w.id === storedWorkspace.id)
-        console.log('本地存储工作区验证:', isValidWorkspace ? '有效' : '无效')
 
         if (isValidWorkspace) {
-          console.log('直接使用本地存储的工作区:', storedWorkspace.name)
           setCurrentWorkspace(storedWorkspace)
           // 不再从服务器获取，避免覆盖本地存储的正确工作区
         } else {
-          console.log('本地存储的工作区无效，从服务器重新获取')
           // 存储的工作区无效，清除并重新获取
           workspaceService.clearCurrentWorkspaceStorage()
           await fetchCurrentWorkspaceFromServer(workspaceData)
         }
       } else {
-        console.log('没有本地存储，从服务器获取')
         // 没有本地存储，从服务器获取
         await fetchCurrentWorkspaceFromServer(workspaceData)
       }
@@ -158,12 +146,8 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
 
   // 从服务器获取当前工作区（仅在本地存储无效时调用）
   const fetchCurrentWorkspaceFromServer = async (workspaceData: Workspace[]) => {
-    console.log('=== 从服务器获取当前工作区 ===')
-    console.log('注意：此方法仅在本地存储无效时调用')
-
     try {
       const currentResponse = await workspaceService.getCurrentWorkspace()
-      console.log('服务器当前工作区响应:', currentResponse)
 
       let newWorkspace: Workspace | null = null
 
@@ -171,28 +155,23 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
       if (currentResponse && !currentResponse.success) {
         // 直接是工作区对象
         newWorkspace = currentResponse
-        console.log('使用直接对象格式:', newWorkspace?.name)
       } else if (currentResponse?.success && currentResponse?.data) {
         // ApiResponse格式
         newWorkspace = currentResponse.data
-        console.log('使用ApiResponse格式:', newWorkspace?.name)
       } else if (currentResponse?.data) {
         // 其他格式
         newWorkspace = currentResponse.data
-        console.log('使用其他格式:', newWorkspace?.name)
       }
 
       if (newWorkspace) {
-        console.log('设置服务器返回的工作区:', newWorkspace.name)
         setCurrentWorkspace(newWorkspace)
         workspaceService.saveCurrentWorkspaceToStorage(newWorkspace)
       } else {
-        console.log('服务器返回无效，使用第一个可用工作区')
+        // 服务器返回无效，使用第一个可用工作区
         if (workspaceData.length > 0) {
           const firstWorkspace = workspaceData[0]
           setCurrentWorkspace(firstWorkspace)
           workspaceService.saveCurrentWorkspaceToStorage(firstWorkspace)
-          console.log('使用第一个可用工作区:', firstWorkspace.name)
         }
       }
     } catch (error) {
@@ -202,44 +181,31 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
         const firstWorkspace = workspaceData[0]
         setCurrentWorkspace(firstWorkspace)
         workspaceService.saveCurrentWorkspaceToStorage(firstWorkspace)
-        console.log('错误情况下使用第一个可用工作区:', firstWorkspace.name)
       }
     }
   }
 
   // 切换工作区
   const handleSwitchWorkspace = async (workspace: Workspace) => {
-    console.log('=== 开始切换工作区 ===')
-    console.log('目标工作区:', workspace)
-    console.log('当前工作区:', currentWorkspace)
-
     if (workspace.id === currentWorkspace?.id) {
-      console.log('已经是当前工作区，无需切换')
       return
     }
 
-    console.log('检查切换权限...')
     const canSwitch = workspaceService.canSwitchToWorkspace(workspace)
-    console.log('权限检查结果:', canSwitch)
-
     if (!canSwitch.allowed) {
-      console.log('权限不足，切换取消')
       message.error(canSwitch.reason || '无法切换到此工作区')
       return
     }
 
-    console.log('权限检查通过，开始切换...')
     // 直接切换工作区，无需确认
     setSwitching(true)
     try {
       await confirmSwitchWorkspace(workspace)
-      console.log('切换操作完成')
     } catch (error) {
-      console.error('切换过程中发生错误:', error)
+      console.error('切换工作区失败:', error)
       message.error('切换工作区失败: ' + (error as Error).message)
     } finally {
       setSwitching(false)
-      console.log('切换状态重置')
     }
   }
 
@@ -421,7 +387,13 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
         type="text"
         icon={<SwitcherOutlined />}
         className={className}
-        style={{ display: 'flex', alignItems: 'center' }}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          width: '100%',
+          justifyContent: 'flex-start',
+          padding: '4px 8px'
+        }}
       >
         <Space>
           <Avatar
@@ -431,11 +403,28 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
               backgroundColor: currentWorkspace.type === 'personal' ? '#1890ff' : '#52c41a'
             }}
           />
-          <div style={{ textAlign: 'left' }}>
-            <div style={{ fontSize: '12px', fontWeight: 500 }}>
+          <div style={{
+            textAlign: 'left',
+            minWidth: 0,
+            flex: 1,
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              fontSize: '12px',
+              fontWeight: 500,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
+            }}>
               {currentWorkspace.name}
             </div>
-            <div style={{ fontSize: '10px', color: '#666' }}>
+            <div style={{
+              fontSize: '10px',
+              color: '#666',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
+            }}>
               {typeInfo.text}
             </div>
           </div>

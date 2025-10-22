@@ -2,135 +2,298 @@
 Quality Management API endpoints for the welding system backend.
 """
 from typing import Any, List, Optional
+from math import ceil
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import status as http_status
 from sqlalchemy.orm import Session
 
 from app.api import deps
+from app.schemas.quality import QualityInspectionCreate, QualityInspectionUpdate, QualityInspectionResponse, QualityInspectionListResponse
+from app.services.quality_service import QualityService
+from app.core.data_access import WorkspaceContext
 
 router = APIRouter()
 
 
-@router.get("/inspections")
+@router.get("/inspections", response_model=dict)
 async def get_quality_inspections(
     db: Session = Depends(deps.get_db),
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
+    factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
     skip: int = Query(0, ge=0, description="跳过记录数"),
     limit: int = Query(100, ge=1, le=1000, description="返回记录数"),
     search: Optional[str] = Query(None, description="搜索关键词"),
     result: Optional[str] = Query(None, description="检验结果"),
     inspection_type: Optional[str] = Query(None, description="检验类型"),
+    inspector_id: Optional[int] = Query(None, description="检验员ID"),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """
     获取质量检验列表
+
+    - **workspace_type**: 工作区类型（personal/enterprise）
+    - **company_id**: 企业ID（企业工作区必填）
+    - **factory_id**: 工厂ID（可选）
+    - **skip**: 跳过的记录数
+    - **limit**: 返回的记录数
+    - **search**: 搜索关键词
+    - **result**: 检验结果筛选
+    - **inspection_type**: 检验类型筛选
+    - **inspector_id**: 检验员ID筛选
     """
-    # TODO: 实现实际的数据库查询
-    return {
-        "success": True,
-        "data": {
-            "items": [
-                {
-                    "id": "inspection-001",
-                    "inspection_number": "QI-2025-001",
-                    "production_task_id": "task-001",
-                    "inspection_date": "2025-01-01",
-                    "inspector_name": "李四",
-                    "inspection_type": "visual",
-                    "result": "pass",
-                    "defects_found": [],
-                    "follow_up_required": False,
-                    "created_at": "2025-01-01T00:00:00Z",
-                    "updated_at": "2025-01-01T00:00:00Z"
-                }
-            ],
-            "total": 1,
-            "page": 1,
-            "page_size": limit,
-            "total_pages": 1
-        },
-        "message": "获取质量检验列表成功"
-    }
+    try:
+        # 构建工作区上下文
+        workspace_context = WorkspaceContext(
+            workspace_type=workspace_type,
+            user_id=current_user.id,
+            company_id=company_id,
+            factory_id=factory_id
+        )
+
+        # 调用服务层
+        service = QualityService(db)
+        inspections, total = service.get_quality_inspection_list(
+            current_user=current_user,
+            workspace_context=workspace_context,
+            skip=skip,
+            limit=limit,
+            search=search,
+            inspection_type=inspection_type,
+            result=result,
+            inspector_id=inspector_id
+        )
+
+        # 计算分页信息
+        page = (skip // limit) + 1 if limit > 0 else 1
+        total_pages = ceil(total / limit) if limit > 0 else 0
+
+        return {
+            "success": True,
+            "data": {
+                "items": [QualityInspectionResponse.model_validate(i) for i in inspections],
+                "total": total,
+                "page": page,
+                "page_size": limit,
+                "total_pages": total_pages
+            },
+            "message": "获取质量检验列表成功"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 
-@router.post("/inspections")
+@router.post("/inspections", response_model=dict)
 async def create_quality_inspection(
-    inspection_data: dict,
+    inspection_in: QualityInspectionCreate,
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
+    factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """
     创建质量检验
+
+    - **workspace_type**: 工作区类型（personal/enterprise）
+    - **company_id**: 企业ID（企业工作区必填）
+    - **factory_id**: 工厂ID（可选）
     """
-    # TODO: 实现实际的创建逻辑
-    return {
-        "success": True,
-        "data": {
-            "id": "new-inspection-id",
-            **inspection_data,
-            "created_at": "2025-01-01T00:00:00Z"
-        },
-        "message": "质量检验创建成功"
-    }
+    try:
+        # 构建工作区上下文
+        workspace_context = WorkspaceContext(
+            workspace_type=workspace_type,
+            user_id=current_user.id,
+            company_id=company_id,
+            factory_id=factory_id
+        )
+
+        # 打印接收到的数据
+        print(f"DEBUG API: 接收到的inspection_in数据: {inspection_in}")
+        dumped_data = inspection_in.model_dump(exclude_unset=True)
+        print(f"DEBUG API: model_dump后的数据: {dumped_data}")
+
+        # 调用服务层 - 使用exclude_unset=True排除未设置的字段
+        service = QualityService(db)
+        inspection = service.create_quality_inspection(
+            current_user=current_user,
+            inspection_data=dumped_data,
+            workspace_context=workspace_context
+        )
+
+        return {
+            "success": True,
+            "data": QualityInspectionResponse.model_validate(inspection),
+            "message": "质量检验创建成功"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error creating quality inspection: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"创建质量检验失败: {str(e)}"
+        )
 
 
-@router.get("/inspections/{inspection_id}")
+@router.get("/inspections/{inspection_id}", response_model=dict)
 async def get_quality_inspection_detail(
-    inspection_id: str,
+    inspection_id: int,
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
+    factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """
     获取质量检验详情
+
+    - **inspection_id**: 检验ID
+    - **workspace_type**: 工作区类型（personal/enterprise）
+    - **company_id**: 企业ID（企业工作区必填）
+    - **factory_id**: 工厂ID（可选）
     """
-    # TODO: 实现实际的查询逻辑
-    return {
-        "success": True,
-        "data": {
-            "id": inspection_id,
-            "inspection_number": "QI-2025-001",
-            "inspection_type": "visual",
-            "result": "pass"
-        },
-        "message": "获取质量检验详情成功"
-    }
+    try:
+        # 构建工作区上下文
+        workspace_context = WorkspaceContext(
+            workspace_type=workspace_type,
+            user_id=current_user.id,
+            company_id=company_id,
+            factory_id=factory_id
+        )
+
+        # 调用服务层
+        service = QualityService(db)
+        inspection = service.get_quality_inspection_by_id(
+            inspection_id=inspection_id,
+            current_user=current_user,
+            workspace_context=workspace_context
+        )
+
+        return {
+            "success": True,
+            "data": QualityInspectionResponse.model_validate(inspection),
+            "message": "获取质量检验详情成功"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 
-@router.put("/inspections/{inspection_id}")
+@router.put("/inspections/{inspection_id}", response_model=dict)
 async def update_quality_inspection(
-    inspection_id: str,
-    inspection_data: dict,
+    inspection_id: int,
+    inspection_in: QualityInspectionUpdate,
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
+    factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """
     更新质量检验
+
+    - **inspection_id**: 检验ID
+    - **workspace_type**: 工作区类型（personal/enterprise）
+    - **company_id**: 企业ID（企业工作区必填）
+    - **factory_id**: 工厂ID（可选）
     """
-    # TODO: 实现实际的更新逻辑
-    return {
-        "success": True,
-        "data": {
-            "id": inspection_id,
-            **inspection_data,
-            "updated_at": "2025-01-01T00:00:00Z"
-        },
-        "message": "质量检验更新成功"
-    }
+    try:
+        # 构建工作区上下文
+        workspace_context = WorkspaceContext(
+            workspace_type=workspace_type,
+            user_id=current_user.id,
+            company_id=company_id,
+            factory_id=factory_id
+        )
+
+        # 调用服务层
+        service = QualityService(db)
+        inspection = service.update_quality_inspection(
+            inspection_id=inspection_id,
+            current_user=current_user,
+            inspection_data=inspection_in.model_dump(exclude_unset=True),
+            workspace_context=workspace_context
+        )
+
+        return {
+            "success": True,
+            "data": QualityInspectionResponse.model_validate(inspection),
+            "message": "质量检验更新成功"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 
-@router.delete("/inspections/{inspection_id}")
+@router.delete("/inspections/{inspection_id}", response_model=dict)
 async def delete_quality_inspection(
-    inspection_id: str,
+    inspection_id: int,
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
+    factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """
     删除质量检验
+
+    - **inspection_id**: 检验ID
+    - **workspace_type**: 工作区类型（personal/enterprise）
+    - **company_id**: 企业ID（企业工作区必填）
+    - **factory_id**: 工厂ID（可选）
     """
-    # TODO: 实现实际的删除逻辑
-    return {
-        "success": True,
-        "message": "质量检验删除成功"
-    }
+    try:
+        # 构建工作区上下文
+        workspace_context = WorkspaceContext(
+            workspace_type=workspace_type,
+            user_id=current_user.id,
+            company_id=company_id,
+            factory_id=factory_id
+        )
+
+        # 调用服务层
+        service = QualityService(db)
+        service.delete_quality_inspection(
+            inspection_id=inspection_id,
+            current_user=current_user,
+            workspace_context=workspace_context
+        )
+
+        return {
+            "success": True,
+            "message": "质量检验删除成功"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 
 @router.get("/nonconformance")

@@ -168,20 +168,27 @@ class WelderCertification(Base):
     certification_type = Column(String(100), nullable=False, comment="证书类型")
     certification_level = Column(String(50), comment="证书等级")
     certification_standard = Column(String(100), comment="认证标准")
+    certification_system = Column(String(50), comment="认证体系")
+    project_name = Column(String(200), comment="项目名称")
     
     # ==================== 颁发信息 ====================
-    issuing_authority = Column(String(255), nullable=False, comment="颁发机构")
+    issuing_authority = Column(String(255), comment="颁发机构")
     issuing_country = Column(String(50), comment="颁发国家")
-    issue_date = Column(Date, nullable=False, comment="颁发日期")
+    issue_date = Column(Date, comment="颁发日期")
     expiry_date = Column(Date, comment="过期日期")
     
     # ==================== 合格范围 ====================
+    # 旧字段（保留用于兼容）
     qualified_process = Column(String(100), comment="合格工艺")
     qualified_material_group = Column(String(100), comment="合格材料组")
     qualified_thickness_range = Column(String(100), comment="合格厚度范围")
     qualified_diameter_range = Column(String(100), comment="合格直径范围")
     qualified_position = Column(String(100), comment="合格位置")
     qualified_filler_material = Column(String(100), comment="合格填充材料")
+
+    # 新字段（JSON格式）
+    qualified_items = Column(Text, comment="合格项目列表（JSON格式）")
+    qualified_range = Column(Text, comment="合格范围列表（JSON格式）")
     
     # ==================== 考试信息 ====================
     exam_date = Column(Date, comment="考试日期")
@@ -199,6 +206,8 @@ class WelderCertification(Base):
     renewal_date = Column(Date, comment="续期日期")
     renewal_count = Column(Integer, default=0, comment="续期次数")
     next_renewal_date = Column(Date, comment="下次续期日期")
+    renewal_result = Column(String(50), comment="复审结果")
+    renewal_notes = Column(Text, comment="复审备注")
     
     # ==================== 附加信息 ====================
     certificate_file_url = Column(String(500), comment="证书文件URL")
@@ -222,16 +231,20 @@ class WelderCertification(Base):
 
 class WelderTraining(Base):
     """焊工培训记录模型"""
-    
+
     __tablename__ = "welder_training_records"
-    
+
     # 主键
     id = Column(Integer, primary_key=True, index=True)
-    
-    # ==================== 关联信息 ====================
-    welder_id = Column(Integer, ForeignKey("welders.id", ondelete="CASCADE"), nullable=False, index=True, comment="焊工ID")
+
+    # ==================== 数据隔离核心字段 ====================
+    workspace_type = Column(String(20), nullable=False, default="personal", index=True, comment="工作区类型")
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True, comment="用户ID")
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=True, index=True, comment="企业ID")
+    factory_id = Column(Integer, ForeignKey("factories.id", ondelete="SET NULL"), nullable=True, index=True, comment="工厂ID")
+
+    # ==================== 关联信息 ====================
+    welder_id = Column(Integer, ForeignKey("welders.id", ondelete="CASCADE"), nullable=False, index=True, comment="焊工ID")
     
     # ==================== 培训信息 ====================
     training_code = Column(String(100), comment="培训编号")
@@ -285,17 +298,20 @@ class WelderTraining(Base):
 
 class WelderWorkRecord(Base):
     """焊工工作记录模型"""
-    
+
     __tablename__ = "welder_work_records"
-    
+
     # 主键
     id = Column(Integer, primary_key=True, index=True)
-    
-    # ==================== 关联信息 ====================
-    welder_id = Column(Integer, ForeignKey("welders.id", ondelete="CASCADE"), nullable=False, index=True, comment="焊工ID")
+
+    # ==================== 数据隔离核心字段 ====================
+    workspace_type = Column(String(20), nullable=False, default="personal", index=True, comment="工作区类型")
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True, comment="用户ID")
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=True, index=True, comment="企业ID")
     factory_id = Column(Integer, ForeignKey("factories.id", ondelete="SET NULL"), nullable=True, index=True, comment="工厂ID")
+
+    # ==================== 关联信息 ====================
+    welder_id = Column(Integer, ForeignKey("welders.id", ondelete="CASCADE"), nullable=False, index=True, comment="焊工ID")
     
     # 关联业务
     production_task_id = Column(Integer, comment="生产任务ID")
@@ -328,7 +344,109 @@ class WelderWorkRecord(Base):
     
     # ==================== 关系 ====================
     # welder = relationship("Welder", back_populates="work_records")
-    
+
     def __repr__(self):
         return f"<WelderWorkRecord(id={self.id}, date={self.work_date})>"
 
+
+class WelderAssessment(Base):
+    """焊工考核记录模型"""
+
+    __tablename__ = "welder_assessment_records"
+
+    # 主键
+    id = Column(Integer, primary_key=True, index=True)
+
+    # ==================== 数据隔离核心字段 ====================
+    workspace_type = Column(String(20), nullable=False, default="personal", index=True, comment="工作区类型")
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True, comment="用户ID")
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=True, index=True, comment="企业ID")
+    factory_id = Column(Integer, ForeignKey("factories.id", ondelete="SET NULL"), nullable=True, index=True, comment="工厂ID")
+
+    # ==================== 关联信息 ====================
+    welder_id = Column(Integer, ForeignKey("welders.id", ondelete="CASCADE"), nullable=False, index=True, comment="焊工ID")
+
+    # ==================== 考核信息 ====================
+    assessment_code = Column(String(100), comment="考核编号")
+    assessment_name = Column(String(255), nullable=False, comment="考核名称")
+    assessment_type = Column(String(100), comment="考核类型")  # 理论考核、实操考核、综合考核
+    assessment_category = Column(String(100), comment="考核类别")  # 入职考核、定期考核、晋级考核
+
+    # ==================== 时间信息 ====================
+    assessment_date = Column(Date, nullable=False, comment="考核日期")
+    duration_minutes = Column(Integer, comment="考核时长(分钟)")
+
+    # ==================== 考核内容 ====================
+    assessment_content = Column(Text, comment="考核内容")
+    assessment_standards = Column(Text, comment="考核标准")
+    assessment_items = Column(Text, comment="考核项目(JSON)")
+
+    # ==================== 考核人员 ====================
+    assessor_name = Column(String(100), comment="考核人")
+    assessor_organization = Column(String(255), comment="考核机构")
+    assessment_location = Column(String(255), comment="考核地点")
+
+    # ==================== 考核成绩 ====================
+    theory_score = Column(Float, comment="理论成绩")
+    practical_score = Column(Float, comment="实操成绩")
+    total_score = Column(Float, comment="总成绩")
+    pass_score = Column(Float, comment="及格分数")
+
+    # ==================== 考核结果 ====================
+    assessment_result = Column(String(50), comment="考核结果")  # 优秀、良好、合格、不合格
+    pass_status = Column(Boolean, comment="是否通过")
+    grade_level = Column(String(50), comment="评定等级")
+
+    # ==================== 证书信息 ====================
+    certificate_issued = Column(Boolean, default=False, comment="是否颁发证书")
+    certificate_number = Column(String(100), comment="证书编号")
+    certificate_file_url = Column(String(500), comment="证书文件URL")
+
+    # ==================== 附加信息 ====================
+    notes = Column(Text, comment="备注")
+    attachments = Column(Text, comment="附件(JSON)")
+
+    # ==================== 审计字段 ====================
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False, comment="创建人ID")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间")
+
+    def __repr__(self):
+        return f"<WelderAssessment(id={self.id}, name={self.assessment_name})>"
+
+
+class WelderWorkHistory(Base):
+    """焊工工作履历模型"""
+
+    __tablename__ = "welder_work_histories"
+
+    # 主键
+    id = Column(Integer, primary_key=True, index=True)
+
+    # ==================== 数据隔离核心字段 ====================
+    workspace_type = Column(String(20), nullable=False, default="personal", index=True, comment="工作区类型")
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True, comment="用户ID")
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=True, index=True, comment="企业ID")
+    factory_id = Column(Integer, ForeignKey("factories.id", ondelete="SET NULL"), nullable=True, index=True, comment="工厂ID")
+
+    # ==================== 关联信息 ====================
+    welder_id = Column(Integer, ForeignKey("welders.id", ondelete="CASCADE"), nullable=False, index=True, comment="焊工ID")
+
+    # ==================== 工作履历信息 ====================
+    company_name = Column(String(255), nullable=False, comment="公司名称")
+    position = Column(String(100), nullable=False, comment="职位")
+    start_date = Column(Date, nullable=False, comment="开始日期")
+    end_date = Column(Date, nullable=True, comment="结束日期")
+    department = Column(String(100), comment="部门")
+    location = Column(String(255), comment="工作地点")
+    job_description = Column(Text, comment="工作内容")
+    achievements = Column(Text, comment="主要成就")
+    leaving_reason = Column(String(255), comment="离职原因")
+
+    # ==================== 审计字段 ====================
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False, comment="创建人ID")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间")
+
+    def __repr__(self):
+        return f"<WelderWorkHistory(id={self.id}, company={self.company_name}, position={self.position})>"

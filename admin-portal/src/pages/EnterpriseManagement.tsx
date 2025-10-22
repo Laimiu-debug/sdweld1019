@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Table, Button, Space, Input, Select, Tag, Badge, Row, Col, message, Empty, Collapse } from 'antd';
 import { SearchOutlined, ReloadOutlined, ExportOutlined, EyeOutlined, BankOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import apiService from '@/services/api';
 
 const { Search } = Input;
@@ -8,6 +9,7 @@ const { Option } = Select;
 const { Panel } = Collapse;
 
 const EnterpriseManagement: React.FC = () => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [enterpriseData, setEnterpriseData] = useState<any[]>([]);
   const [searchText, setSearchText] = useState('');
@@ -125,7 +127,10 @@ const EnterpriseManagement: React.FC = () => {
             企业ID: {record.company_id}
           </div>
           <div style={{ color: '#8c8c8c', fontSize: '12px' }}>
-            配额: {record.members?.length || 0}/{record.max_employees || 0} 员工, {record.max_factories || 0} 工厂
+            配额限制: {record.max_employees || 0} 员工 / {record.max_factories || 0} 工厂
+          </div>
+          <div style={{ color: '#52c41a', fontSize: '12px' }}>
+            当前使用: {record.members?.length || 0} 员工
           </div>
         </div>
       ),
@@ -186,7 +191,12 @@ const EnterpriseManagement: React.FC = () => {
       key: 'actions',
       render: (record: any) => (
         <Space size="small">
-          <Button type="link" size="small" icon={<EyeOutlined />}>
+          <Button
+            type="link"
+            size="small"
+            icon={<EyeOutlined />}
+            onClick={() => navigate(`/enterprises/${record.company_id}`)}
+          >
             查看详情
           </Button>
         </Space>

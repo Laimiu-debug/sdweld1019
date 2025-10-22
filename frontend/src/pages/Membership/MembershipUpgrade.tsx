@@ -478,14 +478,38 @@ const MembershipUpgrade: React.FC = () => {
       const membershipInfo = await membershipService.getUserMembershipInfo()
       if (membershipInfo) {
         setCurrentPlan(membershipInfo.membership_tier)
+
+        // 计算到期日期和剩余天数
+        let expiryDate = '永久有效'
+        let remainingDays = 999
+
+        const tier = membershipInfo.membership_tier || 'personal_free'
+
+        // 免费版永久有效
+        if (tier === 'free' || tier === 'personal_free') {
+          expiryDate = '永久有效'
+          remainingDays = 999
+        } else if (membershipInfo.subscription_end_date) {
+          // 付费版有结束日期
+          const endDate = new Date(membershipInfo.subscription_end_date)
+          const now = new Date()
+          const diffTime = endDate.getTime() - now.getTime()
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+
+          expiryDate = membershipInfo.subscription_end_date
+          remainingDays = diffDays > 0 ? diffDays : 0
+        } else {
+          // 付费版但没有结束日期
+          expiryDate = '未订阅'
+          remainingDays = 0
+        }
+
         setUserMembership({
           currentPlan: membershipInfo.membership_tier,
-          expiryDate: membershipInfo.subscription_end_date || '永久有效',
+          expiryDate: expiryDate,
           features: membershipInfo.features || [],
           upgradeOptions: [],
-          remainingDays: membershipInfo.subscription_end_date
-            ? Math.ceil((new Date(membershipInfo.subscription_end_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
-            : 999
+          remainingDays: remainingDays
         })
       }
     } catch (error) {
@@ -495,14 +519,35 @@ const MembershipUpgrade: React.FC = () => {
         const tier = (user as any).member_tier || user.membership_tier || 'personal_free'
         setCurrentPlan(tier)
 
+        // 计算到期日期和剩余天数
+        let expiryDate = '永久有效'
+        let remainingDays = 999
+
+        // 免费版永久有效
+        if (tier === 'free' || tier === 'personal_free') {
+          expiryDate = '永久有效'
+          remainingDays = 999
+        } else if ((user as any).subscription_end_date) {
+          // 付费版有结束日期
+          const endDate = new Date((user as any).subscription_end_date)
+          const now = new Date()
+          const diffTime = endDate.getTime() - now.getTime()
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+
+          expiryDate = (user as any).subscription_end_date
+          remainingDays = diffDays > 0 ? diffDays : 0
+        } else {
+          // 付费版但没有结束日期
+          expiryDate = '未订阅'
+          remainingDays = 0
+        }
+
         setUserMembership({
           currentPlan: tier,
-          expiryDate: (user as any).subscription_end_date || '永久有效',
+          expiryDate: expiryDate,
           features: getFeaturesByTier(tier),
           upgradeOptions: [],
-          remainingDays: (user as any).subscription_end_date
-            ? Math.ceil((new Date((user as any).subscription_end_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
-            : 999
+          remainingDays: remainingDays
         })
       }
     }
@@ -695,12 +740,21 @@ const MembershipUpgrade: React.FC = () => {
                   <Text type="secondary">永久有效</Text>
                 ) : (
                   <>
-                    <Text type="secondary">到期时间：{userMembership.expiryDate}</Text>
-                    <div className="mt-2">
-                      <Tag color="blue">
-                        剩余 {userMembership.remainingDays} 天
-                      </Tag>
-                    </div>
+                    <Text type="secondary">
+                      到期时间：
+                      {userMembership.expiryDate === '未订阅'
+                        ? userMembership.expiryDate
+                        : (userMembership.expiryDate === '永久有效'
+                          ? userMembership.expiryDate
+                          : new Date(userMembership.expiryDate).toLocaleDateString('zh-CN'))}
+                    </Text>
+                    {userMembership.expiryDate !== '未订阅' && userMembership.expiryDate !== '永久有效' && (
+                      <div className="mt-2">
+                        <Tag color={userMembership.remainingDays > 30 ? 'blue' : (userMembership.remainingDays > 7 ? 'orange' : 'red')}>
+                          剩余 {userMembership.remainingDays} 天
+                        </Tag>
+                      </div>
+                    )}
                   </>
                 )}
               </div>

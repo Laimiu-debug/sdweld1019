@@ -173,7 +173,7 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return v
         # 如果没有设置DATABASE_URL，使用PostgreSQL作为默认数据库
-        return f"postgresql://postgres:123456@localhost:5432/sdweld1016"
+        return f"postgresql://weld_user:weld_password@localhost:5432/weld_db"
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:

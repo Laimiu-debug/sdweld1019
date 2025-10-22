@@ -35,10 +35,10 @@ const MaterialsCreate = React.lazy(() => import('@/pages/Materials/MaterialsCrea
 const MaterialsEdit = React.lazy(() => import('@/pages/Materials/MaterialsEdit'))
 const MaterialsDetail = React.lazy(() => import('@/pages/Materials/MaterialsDetail'))
 
-const WeldersList = React.lazy(() => import('@/pages/Welder/WelderList'))
-const WeldersCreate = React.lazy(() => import('@/pages/Welder/WelderCreate'))
-const WeldersEdit = React.lazy(() => import('@/pages/Welder/WelderEdit'))
-const WeldersDetail = React.lazy(() => import('@/pages/Welder/WelderDetail'))
+const WeldersList = React.lazy(() => import('@/pages/Welders/WeldersList'))
+const WeldersCreate = React.lazy(() => import('@/pages/Welders/WeldersCreate'))
+const WeldersEdit = React.lazy(() => import('@/pages/Welders/WeldersEdit'))
+const WeldersDetail = React.lazy(() => import('@/pages/Welders/WeldersDetail'))
 
 const EquipmentList = React.lazy(() => import('@/pages/Equipment/EquipmentList'))
 const EquipmentCreate = React.lazy(() => import('@/pages/Equipment/EquipmentCreate'))
