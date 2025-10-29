@@ -11,7 +11,7 @@ class ApiService {
       baseURL: import.meta.env.VITE_API_BASE_URL || '/api/v1',
       timeout: 30000,
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json; charset=utf-8',
       },
     })
 
@@ -26,6 +26,25 @@ class ApiService {
         if (token) {
           config.headers.Authorization = `Bearer ${token}`
         }
+
+        // 添加工作区上下文header
+        const currentWorkspace = localStorage.getItem('current_workspace')
+        if (currentWorkspace) {
+          try {
+            const workspace = JSON.parse(currentWorkspace)
+            if (workspace.id) {
+              config.headers['X-Workspace-ID'] = workspace.id
+            }
+          } catch (error) {
+            console.error('解析工作区信息失败:', error)
+          }
+        }
+
+        // 确保Content-Type包含charset
+        if (!config.headers['Content-Type']) {
+          config.headers['Content-Type'] = 'application/json; charset=utf-8'
+        }
+
         return config
       },
       (error) => {
@@ -67,10 +86,17 @@ class ApiService {
               console.error('请求的资源不存在:', error.config?.url)
               break
             case 422:
+              console.error('[API] 422验证错误 - 完整响应:', response)
+              console.error('[API] 422验证错误 - 响应数据:', response.data)
+              console.error('[API] 422验证错误 - 请求URL:', error.config?.url)
+              console.error('[API] 422验证错误 - 请求参数:', error.config?.params)
+              console.error('[API] 422验证错误 - 请求headers:', error.config?.headers)
+
               const validationErrors = response.data?.detail
               if (Array.isArray(validationErrors)) {
                 const firstError = validationErrors[0]
-                message.error(firstError.msg || '请求参数错误')
+                console.error('[API] 422验证错误 - 第一个错误:', firstError)
+                message.error(`参数错误: ${firstError.msg || '请求参数错误'} (字段: ${firstError.loc?.join('.')})`)
               } else if (typeof validationErrors === 'string') {
                 message.error(validationErrors)
               } else {

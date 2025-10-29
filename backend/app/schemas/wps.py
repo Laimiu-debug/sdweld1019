@@ -1,8 +1,8 @@
 """
 WPS schemas for the welding system backend.
 """
-from typing import List, Optional
-from datetime import datetime
+from typing import List, Optional, Dict, Any
+from datetime import datetime, date
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -14,13 +14,27 @@ class WPSBase(BaseModel):
     wps_number: str = Field(..., min_length=1, max_length=50, description="WPS编号")
     revision: str = Field(default="A", max_length=10, description="版本号")
     status: str = Field(default="draft", max_length=20, description="状态")
+
+    # 新增核心字段
+    template_id: Optional[str] = Field(None, max_length=100, description="使用的模板ID")
+    process_specification: Optional[str] = Field(None, max_length=50, description="工艺规范")
+    product_name: Optional[str] = Field(None, max_length=200, description="产品名称")
+    manufacturer: Optional[str] = Field(None, max_length=200, description="制造商")
+    customer: Optional[str] = Field(None, max_length=200, description="用户/客户")
+    location: Optional[str] = Field(None, max_length=200, description="地点")
+    order_number: Optional[str] = Field(None, max_length=100, description="订单编号")
+    part_number: Optional[str] = Field(None, max_length=100, description="部件编号")
+    drawing_number: Optional[str] = Field(None, max_length=100, description="图纸编号")
+    wpqr_number: Optional[str] = Field(None, max_length=100, description="WPQR编号/标准")
+    welder_qualification: Optional[str] = Field(None, max_length=200, description="焊工资质要求")
+    pdf_link: Optional[str] = Field(None, max_length=500, description="WPS PDF文件链接")
+
     company: Optional[str] = Field(None, max_length=100, description="公司名称")
     project_name: Optional[str] = Field(None, max_length=100, description="项目名称")
 
     # 焊接工艺参数
-    welding_process: Optional[str] = Field(None, max_length=50, description="焊接工艺")
+    welding_process: Optional[str] = Field(None, max_length=50, description="焊接工艺代码")
     process_type: Optional[str] = Field(None, max_length=20, description="工艺类型")
-    process_specification: Optional[str] = Field(None, max_length=50, description="工艺规范")
 
     # 母材信息
     base_material_group: Optional[str] = Field(None, max_length=50, description="母材组号")
@@ -88,6 +102,21 @@ class WPSBase(BaseModel):
     notes: Optional[str] = Field(None, description="备注")
     supporting_documents: Optional[str] = Field(None, description="支持文件链接")
     attachments: Optional[str] = Field(None, description="附件文件路径")
+
+    # JSONB动态字段（用于存储模板驱动的数据）
+    # 新增：完全灵活的模块数据存储
+    # 结构: { "module_instance_id": { "field_key": value, ... }, ... }
+    modules_data: Optional[Dict[str, Any]] = Field(None, description="所有模块数据（JSON格式），支持无限自定义")
+
+    # 文档编辑模式字段
+    document_html: Optional[str] = Field(None, description="文档HTML内容（用于文档编辑模式）")
+
+    # 保留以下字段用于向后兼容（逐步废弃）
+    header_info: Optional[Dict[str, Any]] = Field(None, description="表头数据（JSON格式）- 已废弃，使用 modules_data")
+    summary_info: Optional[Dict[str, Any]] = Field(None, description="概要信息（JSON格式）- 已废弃，使用 modules_data")
+    diagram_info: Optional[Dict[str, Any]] = Field(None, description="示意图信息（JSON格式）- 已废弃，使用 modules_data")
+    weld_layers: Optional[List[Dict[str, Any]]] = Field(None, description="焊层信息数组（JSON格式）- 已废弃，使用 modules_data")
+    additional_info: Optional[Dict[str, Any]] = Field(None, description="附加信息（JSON格式）- 已废弃，使用 modules_data")
 
 
 class WPSCreate(WPSBase):
@@ -175,6 +204,9 @@ class WPSUpdate(BaseModel):
     supporting_documents: Optional[str] = Field(None, description="支持文件链接")
     attachments: Optional[str] = Field(None, description="附件文件路径")
 
+    # 文档编辑模式
+    document_html: Optional[str] = Field(None, description="文档HTML内容（用于文档编辑模式）")
+
     # 审核和批准
     reviewed_by: Optional[int] = Field(None, description="审核人ID")
     approved_by: Optional[int] = Field(None, description="批准人ID")
@@ -191,6 +223,10 @@ class WPSResponse(WPSBase):
     created_at: datetime
     updated_at: datetime
     is_active: bool
+    # 审批相关字段
+    approval_instance_id: Optional[int] = None
+    approval_status: Optional[str] = None
+    workflow_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -207,8 +243,17 @@ class WPSSummary(BaseModel):
     welding_process: Optional[str] = None
     base_material_spec: Optional[str] = None
     filler_material_classification: Optional[str] = None
+    template_id: Optional[str] = None
+    modules_data: Optional[Dict[str, Any]] = None
     created_at: datetime
     updated_at: datetime
+    # 审批相关字段
+    approval_instance_id: Optional[int] = None
+    approval_status: Optional[str] = None
+    workflow_name: Optional[str] = None
+    can_approve: Optional[bool] = None
+    can_submit_approval: Optional[bool] = None
+    submitter_id: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
 

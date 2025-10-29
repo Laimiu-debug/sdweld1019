@@ -10,7 +10,8 @@ import {
   Divider,
   Space,
   Alert,
-  Modal
+  Modal,
+  Checkbox
 } from 'antd'
 import { UserOutlined, LockOutlined, ExclamationCircleOutlined } from '@ant-design/icons'
 import { Link, useNavigate } from 'react-router-dom'
@@ -278,7 +279,33 @@ const Register: React.FC = () => {
               />
             </Form.Item>
 
-  
+            {/* 用户协议和隐私政策勾选框 */}
+            <Form.Item
+              name="agreement"
+              valuePropName="checked"
+              rules={[
+                {
+                  validator: (_, value) =>
+                    value
+                      ? Promise.resolve()
+                      : Promise.reject(new Error('请阅读并同意用户协议和隐私政策')),
+                },
+              ]}
+            >
+              <Checkbox>
+                <Text type="secondary" style={{ fontSize: '12px' }}>
+                  我已阅读并同意{' '}
+                  <Link to="/terms-of-service" target="_blank" style={{ color: '#1890ff' }}>
+                    《用户服务协议》
+                  </Link>
+                  {' '}和{' '}
+                  <Link to="/privacy-policy" target="_blank" style={{ color: '#1890ff' }}>
+                    《隐私政策》
+                  </Link>
+                </Text>
+              </Checkbox>
+            </Form.Item>
+
             <Form.Item>
               <Button
                 type="primary"
@@ -304,17 +331,23 @@ const Register: React.FC = () => {
                   立即登录
                 </Link>
               </Text>
+            </Space>
+          </div>
 
-              <Text type="secondary" className="text-xs">
-                注册即表示您同意我们的{' '}
-                <a href="#" className="text-blue-600 hover:text-blue-800">
-                  服务条款
-                </a>{' '}
-                和{' '}
-                <a href="#" className="text-blue-600 hover:text-blue-800">
-                  隐私政策
-                </a>
-              </Text>
+          <Divider />
+
+          {/* 法律政策链接 */}
+          <div className="text-center">
+            <Space split={<Divider type="vertical" />} size="small">
+              <Link to="/privacy-policy" style={{ fontSize: '12px', color: '#8c8c8c' }}>
+                隐私政策
+              </Link>
+              <Link to="/terms-of-service" style={{ fontSize: '12px', color: '#8c8c8c' }}>
+                用户协议
+              </Link>
+              <Link to="/refund-policy" style={{ fontSize: '12px', color: '#8c8c8c' }}>
+                退款政策
+              </Link>
             </Space>
           </div>
         </Card>

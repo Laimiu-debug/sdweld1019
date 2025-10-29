@@ -106,6 +106,7 @@ export interface PermissionConfig {
   create: boolean
   edit: boolean
   delete: boolean
+  approve: boolean
 }
 
 export interface RolePermissions {

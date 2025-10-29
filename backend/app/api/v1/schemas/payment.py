@@ -52,3 +52,15 @@ class PaymentStatus(BaseModel):
     paid_at: Optional[datetime] = Field(None, description="支付时间")
     transaction_id: Optional[str] = Field(None, description="交易ID")
     failure_reason: Optional[str] = Field(None, description="失败原因")
+
+
+class ManualPaymentRequest(BaseModel):
+    """手动支付凭证提交请求"""
+    order_id: str = Field(..., description="订单ID")
+    transaction_id: str = Field(..., description="支付宝/微信交易号")
+    payment_method: str = Field(..., description="支付方式: alipay, wechat")
+
+
+class ManualPaymentConfirmRequest(BaseModel):
+    """管理员确认手动支付请求"""
+    order_id: str = Field(..., description="订单ID")

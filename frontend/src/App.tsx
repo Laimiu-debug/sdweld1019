@@ -13,12 +13,20 @@ const ForgotPassword = React.lazy(() => import('@/pages/Auth/ForgotPassword'))
 const ResetPassword = React.lazy(() => import('@/pages/Auth/ResetPassword'))
 const LoginDebug = React.lazy(() => import('@/pages/Auth/LoginDebug'))
 
+// 法律政策页面
+const PrivacyPolicy = React.lazy(() => import('@/pages/Legal/PrivacyPolicy'))
+const TermsOfService = React.lazy(() => import('@/pages/Legal/TermsOfService'))
+const RefundPolicy = React.lazy(() => import('@/pages/Legal/RefundPolicy'))
+const PricingTerms = React.lazy(() => import('@/pages/Legal/PricingTerms'))
+
 const Dashboard = React.lazy(() => import('@/pages/Dashboard'))
 
 const WPSList = React.lazy(() => import('@/pages/WPS/WPSList'))
 const WPSCreate = React.lazy(() => import('@/pages/WPS/WPSCreate'))
 const WPSEdit = React.lazy(() => import('@/pages/WPS/WPSEdit'))
 const WPSDetail = React.lazy(() => import('@/pages/WPS/WPSDetail'))
+const TemplateManagement = React.lazy(() => import('@/pages/WPS/TemplateManagement'))
+const ModuleManagement = React.lazy(() => import('@/pages/WPS/ModuleManagement'))
 
 const PQRList = React.lazy(() => import('@/pages/PQR/PQRList'))
 const PQRCreate = React.lazy(() => import('@/pages/PQR/PQRCreate'))
@@ -82,6 +90,19 @@ const MembershipCurrent = React.lazy(() => import('@/pages/Membership/Membership
 const MembershipUpgrade = React.lazy(() => import('@/pages/Membership/MembershipUpgrade'))
 const MembershipPayment = React.lazy(() => import('@/pages/Membership/MembershipPayment'))
 const SubscriptionHistory = React.lazy(() => import('@/pages/Membership/SubscriptionHistory'))
+
+// 共享库页面
+const SharedLibraryList = React.lazy(() => import('@/pages/SharedLibrary/SharedLibraryList'))
+
+// 审批工作流页面
+const ApprovalWorkflows = React.lazy(() => import('@/pages/Workflow/ApprovalWorkflows'))
+
+// 管理端页面
+const PendingPayments = React.lazy(() => import('@/pages/Admin/PendingPayments'))
+
+// 测试页面
+const TestWeldJointV2 = React.lazy(() => import('@/pages/TestWeldJointV2'))
+const TestWeldJointV3 = React.lazy(() => import('@/pages/TestWeldJointV3'))
 
 // 路由守卫组件
 const ProtectedRoute: React.FC<{ children: React.ReactNode; requiredPermission?: string }> = ({
@@ -175,6 +196,11 @@ const App: React.FC = () => {
           element={<LoginDebug />}
         />
 
+        {/* 法律政策路由（公开访问） */}
+        <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+        <Route path="/terms-of-service" element={<TermsOfService />} />
+        <Route path="/refund-policy" element={<RefundPolicy />} />
+        <Route path="/pricing-terms" element={<PricingTerms />} />
 
         {/* 受保护的路由 */}
         <Route
@@ -197,6 +223,36 @@ const App: React.FC = () => {
               </ProtectedRoute>
             }
           />
+
+          {/* 资源库 */}
+          {/* 模块管理 */}
+          <Route
+            path="modules"
+            element={
+              <ProtectedRoute>
+                <ModuleManagement />
+              </ProtectedRoute>
+            }
+          />
+          {/* 模板管理 */}
+          <Route
+            path="templates"
+            element={
+              <ProtectedRoute>
+                <TemplateManagement />
+              </ProtectedRoute>
+            }
+          />
+          {/* 共享库 */}
+          <Route
+            path="shared-library"
+            element={
+              <ProtectedRoute>
+                <SharedLibraryList />
+              </ProtectedRoute>
+            }
+          />
+
 
           {/* WPS管理 */}
           <Route
@@ -545,6 +601,14 @@ const App: React.FC = () => {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="enterprise/approval-workflows"
+            element={
+              <ProtectedRoute requiredPermission="enterprise.roles">
+                <ApprovalWorkflows />
+              </ProtectedRoute>
+            }
+          />
 
           {/* 员工管理 */}
           <Route
@@ -628,6 +692,34 @@ const App: React.FC = () => {
             element={
               <ProtectedRoute>
                 <SubscriptionHistory />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* 管理后台 */}
+          <Route
+            path="admin/pending-payments"
+            element={
+              <ProtectedRoute>
+                <PendingPayments />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* 测试页面 */}
+          <Route
+            path="test-weld-joint-v2"
+            element={
+              <ProtectedRoute>
+                <TestWeldJointV2 />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="test-weld-joint-v3"
+            element={
+              <ProtectedRoute>
+                <TestWeldJointV3 />
               </ProtectedRoute>
             }
           />

@@ -13,6 +13,7 @@ from app.models.admin import Admin
 from app.models.system_announcement import SystemAnnouncement
 from app.models.system_log import SystemLog
 from app.services.system_service import SystemService
+from app.services.notification_service import NotificationService
 from app.core.database import get_db
 
 router = APIRouter()
@@ -193,6 +194,7 @@ async def get_announcements_admin(
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     is_published: Optional[bool] = Query(None, description="发布状态筛选"),
     announcement_type: Optional[str] = Query(None, description="公告类型筛选"),
+    is_auto_generated: Optional[bool] = Query(None, description="是否为自动生成"),
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
 ) -> Any:
@@ -207,6 +209,9 @@ async def get_announcements_admin(
 
     if announcement_type:
         query = query.filter(SystemAnnouncement.announcement_type == announcement_type)
+
+    if is_auto_generated is not None:
+        query = query.filter(SystemAnnouncement.is_auto_generated == is_auto_generated)
 
     # 总数统计
     total = query.count()
@@ -226,6 +231,7 @@ async def get_announcements_admin(
             "priority": announcement.priority,
             "is_published": announcement.is_published,
             "is_pinned": announcement.is_pinned,
+            "is_auto_generated": getattr(announcement, 'is_auto_generated', False),
             "target_audience": announcement.target_audience,
             "publish_at": announcement.publish_at.isoformat() if announcement.publish_at else None,
             "expire_at": announcement.expire_at.isoformat() if announcement.expire_at else None,
@@ -261,6 +267,7 @@ async def create_announcement_admin(
         announcement_type=announcement_data.get("announcement_type", "info"),
         priority=announcement_data.get("priority", "normal"),
         target_audience=announcement_data.get("target_audience", "all"),
+        is_pinned=announcement_data.get("is_pinned", False),
         publish_at=datetime.fromisoformat(announcement_data["publish_at"]) if announcement_data.get("publish_at") else None,
         expire_at=datetime.fromisoformat(announcement_data["expire_at"]) if announcement_data.get("expire_at") else None,
         created_by=current_admin.user_id,
@@ -273,10 +280,11 @@ async def create_announcement_admin(
 
     # 记录操作日志
     system_service = SystemService(db)
+    admin_email = current_admin.email if current_admin.email else f"ID:{current_admin.id}"
     system_service.create_system_log(
         log_level="info",
         log_type="admin",
-        message=f"管理员 {current_admin.user.email} 创建了公告: {announcement.title}",
+        message=f"管理员 {admin_email} 创建了公告: {announcement.title}",
         user_id=current_admin.user_id,
         details={"announcement_id": announcement.id}
     )
@@ -335,10 +343,11 @@ async def update_announcement_admin(
 
     # 记录操作日志
     system_service = SystemService(db)
+    admin_email = current_admin.email if current_admin.email else f"ID:{current_admin.id}"
     system_service.create_system_log(
         log_level="info",
         log_type="admin",
-        message=f"管理员 {current_admin.user.email} 更新了公告: {announcement.title}",
+        message=f"管理员 {admin_email} 更新了公告: {announcement.title}",
         user_id=current_admin.user_id,
         details={"announcement_id": announcement.id}
     )
@@ -378,10 +387,11 @@ async def publish_announcement_admin(
 
     # 记录操作日志
     system_service = SystemService(db)
+    admin_email = current_admin.email if current_admin.email else f"ID:{current_admin.id}"
     system_service.create_system_log(
         log_level="info",
         log_type="admin",
-        message=f"管理员 {current_admin.user.email} 发布了公告: {announcement.title}",
+        message=f"管理员 {admin_email} 发布了公告: {announcement.title}",
         user_id=current_admin.user_id,
         details={"announcement_id": announcement.id}
     )
@@ -419,10 +429,11 @@ async def delete_announcement_admin(
 
     # 记录操作日志
     system_service = SystemService(db)
+    admin_email = current_admin.email if current_admin.email else f"ID:{current_admin.id}"
     system_service.create_system_log(
         log_level="info",
         log_type="admin",
-        message=f"管理员 {current_admin.user.email} 删除了公告: {announcement_title}",
+        message=f"管理员 {admin_email} 删除了公告: {announcement_title}",
         user_id=current_admin.user_id,
         details={"announcement_id": announcement_id}
     )
@@ -434,3 +445,185 @@ async def delete_announcement_admin(
             "deleted_announcement_id": announcement_id
         }
     }
+
+
+@router.post("/announcements/{announcement_id}/unpublish")
+async def unpublish_announcement_admin(
+    announcement_id: int,
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_active_admin)
+) -> Any:
+    """
+    取消发布系统公告（管理员专用）
+    """
+    announcement = db.query(SystemAnnouncement).filter(SystemAnnouncement.id == announcement_id).first()
+    if not announcement:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="公告不存在"
+        )
+
+    announcement.is_published = False
+    announcement.updated_at = datetime.utcnow()
+    announcement.updated_by = current_admin.user_id
+
+    db.commit()
+
+    # 记录操作日志
+    system_service = SystemService(db)
+    admin_email = current_admin.email if current_admin.email else f"ID:{current_admin.id}"
+    system_service.create_system_log(
+        log_level="info",
+        log_type="admin",
+        message=f"管理员 {admin_email} 取消发布了公告: {announcement.title}",
+        user_id=current_admin.user_id,
+        details={"announcement_id": announcement.id}
+    )
+
+    return {
+        "success": True,
+        "message": "公告已取消发布",
+        "data": {
+            "id": announcement.id,
+            "title": announcement.title
+        }
+    }
+
+
+# ==================== 自动通知任务 ====================
+
+@router.post("/notifications/tasks/daily")
+async def run_daily_notification_tasks(
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_active_admin)
+) -> Any:
+    """
+    手动触发每日通知任务
+    包括：会员到期提醒、过期处理、自动续费、配额警告
+    """
+    try:
+        notification_service = NotificationService(db)
+
+        # 1. 检查并通知即将到期的会员
+        expiring_count = notification_service.send_expiration_reminders(days_ahead=7)
+
+        # 2. 检查并通知已过期的会员
+        expired_count = notification_service.process_expired_subscriptions()
+
+        # 3. 处理自动续费
+        renewed_count = notification_service.process_auto_renewals()
+
+        # 4. 检查配额使用情况
+        quota_count = notification_service.check_and_notify_quota_usage()
+
+        # 记录操作日志
+        system_service = SystemService(db)
+        admin_email = current_admin.email if current_admin.email else f"ID:{current_admin.id}"
+        system_service.create_system_log(
+            log_level="info",
+            log_type="admin",
+            message=f"管理员 {admin_email} 手动触发了每日通知任务",
+            user_id=current_admin.user_id,
+            details={
+                "expiring_count": expiring_count,
+                "expired_count": expired_count,
+                "renewed_count": renewed_count,
+                "quota_count": quota_count,
+            }
+        )
+
+        return {
+            "success": True,
+            "message": "每日通知任务执行完成",
+            "data": {
+                "expiring_count": expiring_count,
+                "expired_count": expired_count,
+                "renewed_count": renewed_count,
+                "quota_count": quota_count,
+                "total_notifications": expiring_count + expired_count + renewed_count + quota_count,
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"执行通知任务失败: {str(e)}"
+        )
+
+
+@router.post("/notifications/tasks/expiring")
+async def run_expiring_notification_task(
+    days_ahead: int = Query(7, ge=1, le=30, description="提前多少天通知"),
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_active_admin)
+) -> Any:
+    """
+    手动触发会员到期提醒任务
+    """
+    try:
+        notification_service = NotificationService(db)
+        count = notification_service.send_expiration_reminders(days_ahead=days_ahead)
+
+        # 记录操作日志
+        system_service = SystemService(db)
+        admin_email = current_admin.email if current_admin.email else f"ID:{current_admin.id}"
+        system_service.create_system_log(
+            log_level="info",
+            log_type="admin",
+            message=f"管理员 {admin_email} 手动触发了会员到期提醒任务（提前{days_ahead}天）",
+            user_id=current_admin.user_id,
+            details={"days_ahead": days_ahead, "count": count}
+        )
+
+        return {
+            "success": True,
+            "message": f"已发送 {count} 条会员到期提醒",
+            "data": {
+                "count": count,
+                "days_ahead": days_ahead
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"执行会员到期提醒任务失败: {str(e)}"
+        )
+
+
+@router.post("/notifications/tasks/quota")
+async def run_quota_notification_task(
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_active_admin)
+) -> Any:
+    """
+    手动触发配额使用警告任务
+    """
+    try:
+        notification_service = NotificationService(db)
+        count = notification_service.check_and_notify_quota_usage()
+
+        # 记录操作日志
+        system_service = SystemService(db)
+        admin_email = current_admin.email if current_admin.email else f"ID:{current_admin.id}"
+        system_service.create_system_log(
+            log_level="info",
+            log_type="admin",
+            message=f"管理员 {admin_email} 手动触发了配额警告任务",
+            user_id=current_admin.user_id,
+            details={"count": count}
+        )
+
+        return {
+            "success": True,
+            "message": f"已发送 {count} 条配额警告",
+            "data": {
+                "count": count
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"执行配额警告任务失败: {str(e)}"
+        )

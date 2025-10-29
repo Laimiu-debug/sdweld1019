@@ -149,6 +149,25 @@ class QualityInspection(Base):
         return True
 
     @property
+    def is_qualified(self):
+        """根据inspection_result计算是否合格"""
+        if self.inspection_result == "pass":
+            return True
+        elif self.inspection_result in ["fail", "conditional", "pending"]:
+            return False
+        return False
+
+    @is_qualified.setter
+    def is_qualified(self, value):
+        """设置is_qualified值时，自动更新inspection_result"""
+        if value is True:
+            self.inspection_result = "pass"
+        elif value is False:
+            # 如果当前result不是fail或conditional，默认设为fail
+            if self.inspection_result not in ["fail", "conditional"]:
+                self.inspection_result = "fail"
+
+    @property
     def inspection_type(self):
         """默认检验类型"""
         return "visual"

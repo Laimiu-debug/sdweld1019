@@ -170,6 +170,13 @@ export interface WPSRecord {
   preheat_temp_max?: number;
   interpass_temp_min?: number;
   interpass_temp_max?: number;
+  // 审批相关字段
+  approval_instance_id?: number;
+  approval_status?: string;
+  workflow_name?: string;
+  can_approve?: boolean;
+  can_submit_approval?: boolean;
+  submitter_id?: number;
   post_weld_heat_treatment?: Record<string, any>;
   current_range?: string;
   voltage_range?: string;
@@ -202,11 +209,12 @@ export interface WPSRecord {
   factory?: Factory;
 }
 
-export type WPSStatus = 
-  | 'draft' 
-  | 'review' 
-  | 'approved' 
-  | 'archived' 
+export type WPSStatus =
+  | 'draft'
+  | 'review'
+  | 'approved'
+  | 'rejected'
+  | 'archived'
   | 'obsolete';
 
 export type WPSPriority = 
@@ -599,17 +607,22 @@ export interface DashboardStats {
   materials_count: number;
   welders_count: number;
   equipment_count: number;
-  active_tasks: number;
-  pending_inspections: number;
+  production_count?: number;
+  quality_count?: number;
   storage_used_mb: number;
   storage_limit_mb: number;
   membership_usage: {
     wps_usage: number;
+    wps_limit: number;
     pqr_usage: number;
+    pqr_limit: number;
     ppqr_usage: number;
-    materials_usage: number;
-    welders_usage: number;
-    equipment_usage: number;
+    ppqr_limit: number;
+  };
+  company_info?: {
+    name: string;
+    employee_count: number;
+    factory_count: number;
   };
 }
 

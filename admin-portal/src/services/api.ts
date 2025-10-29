@@ -317,6 +317,43 @@ class ApiService {
     return this.api.get('/subscriptions', { params });
   }
 
+  // 订阅计划管理
+  async getSubscriptionPlans() {
+    if (this.useMockData) {
+      return new Promise(resolve => {
+        setTimeout(() => resolve({
+          success: true,
+          data: []
+        }), 500);
+      });
+    }
+    return this.api.get('/membership/subscription-plans');
+  }
+
+  async updateSubscriptionPlan(planId: string, data: any) {
+    if (this.useMockData) {
+      return new Promise(resolve => {
+        setTimeout(() => resolve({
+          success: true,
+          message: '订阅计划更新成功'
+        }), 1000);
+      });
+    }
+    return this.api.put(`/membership/subscription-plans/${planId}`, data);
+  }
+
+  async createSubscriptionPlan(data: any) {
+    if (this.useMockData) {
+      return new Promise(resolve => {
+        setTimeout(() => resolve({
+          success: true,
+          message: '订阅计划创建成功'
+        }), 1000);
+      });
+    }
+    return this.api.post('/membership/subscription-plans', data);
+  }
+
   // 认证相关方法
   async authPost<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
     if (this.useMockData) {

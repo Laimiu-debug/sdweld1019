@@ -137,36 +137,57 @@ class MembershipService:
         return features
 
     def check_quota_available(self, user: User, resource_type: str, amount: int = 1) -> bool:
-        """检查用户配额是否足够"""
+        """检查用户配额是否足够（处理None值）"""
         limits = self.get_membership_limits(user.member_tier)
 
         if resource_type == "wps":
-            return user.wps_quota_used + amount <= limits["wps"]
+            used = user.wps_quota_used or 0
+            return used + amount <= limits["wps"]
         elif resource_type == "pqr":
-            return user.pqr_quota_used + amount <= limits["pqr"]
+            used = user.pqr_quota_used or 0
+            return used + amount <= limits["pqr"]
         elif resource_type == "ppqr":
-            return user.ppqr_quota_used + amount <= limits["ppqr"]
+            used = user.ppqr_quota_used or 0
+            return used + amount <= limits["ppqr"]
         elif resource_type == "storage":
-            return user.storage_quota_used + amount <= limits["storage"]
+            used = user.storage_quota_used or 0
+            return used + amount <= limits["storage"]
 
         return False
 
     def update_quota_usage(self, user: User, resource_type: str, amount: int) -> bool:
-        """更新用户配额使用情况"""
+        """
+        更新用户配额使用情况
+
+        Args:
+            user: 用户对象
+            resource_type: 资源类型 (wps/pqr/ppqr/storage)
+            amount: 变更数量（正数=增加，负数=减少）
+
+        Returns:
+            bool: 是否更新成功
+        """
         if amount == 0:
             return True
 
-        if not self.check_quota_available(user, resource_type, amount if amount > 0 else 0):
-            return False
+        # 只在增加配额时检查是否超限
+        if amount > 0:
+            if not self.check_quota_available(user, resource_type, amount):
+                return False
 
+        # 更新配额使用量（处理None值）
         if resource_type == "wps":
-            user.wps_quota_used += amount
+            current = user.wps_quota_used or 0
+            user.wps_quota_used = max(0, current + amount)
         elif resource_type == "pqr":
-            user.pqr_quota_used += amount
+            current = user.pqr_quota_used or 0
+            user.pqr_quota_used = max(0, current + amount)
         elif resource_type == "ppqr":
-            user.ppqr_quota_used += amount
+            current = user.ppqr_quota_used or 0
+            user.ppqr_quota_used = max(0, current + amount)
         elif resource_type == "storage":
-            user.storage_quota_used += amount
+            current = user.storage_quota_used or 0
+            user.storage_quota_used = max(0, current + amount)
 
         self.db.commit()
         return True
@@ -180,8 +201,10 @@ class MembershipService:
         if not user:
             return None
 
-        # 获取订阅信息（优先从订阅表获取）
-        subscription = self.db.query(Subscription).filter(Subscription.user_id == user_id).first()
+        # 获取订阅信息（优先从订阅表获取最新的活跃订阅）
+        subscription = self.db.query(Subscription).filter(
+            Subscription.user_id == user_id
+        ).order_by(Subscription.created_at.desc()).first()
 
         # 确定订阅状态和日期
         subscription_status = user.subscription_status or "inactive"

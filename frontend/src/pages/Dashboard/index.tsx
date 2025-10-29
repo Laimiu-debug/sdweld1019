@@ -15,6 +15,7 @@ import {
   Avatar,
   Tag,
   Tooltip,
+  message,
 } from 'antd'
 import {
   FileTextOutlined,
@@ -34,15 +35,15 @@ import {
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/store/authStore'
-import { DashboardStats, WPSRecord, PQRRecord } from '@/types'
+import { DashboardStats } from '@/types'
+import dashboardService, { RecentActivity } from '@/services/dashboard'
 
 const { Title, Text, Paragraph } = Typography
 
 const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState<DashboardStats | null>(null)
-  const [recentWPS, setRecentWPS] = useState<WPSRecord[]>([])
-  const [recentPQR, setRecentPQR] = useState<PQRRecord[]>([])
+  const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([])
   const navigate = useNavigate()
   const { user, checkPermission, canCreateMore } = useAuthStore()
 
@@ -50,100 +51,26 @@ const Dashboard: React.FC = () => {
   const isGuestMode = !user
 
   useEffect(() => {
-    // 模拟数据加载
+    // 加载仪表盘数据
     const loadDashboardData = async () => {
+      if (!user) {
+        setLoading(false)
+        return
+      }
+
       setLoading(true)
       try {
-        // 这里应该调用API获取实际数据
-        // const statsData = await dashboardService.getStats()
-        // const wpsData = await wpsService.getRecent()
-        // const pqrData = await pqrService.getRecent()
+        // 获取统计数据
+        const statsData = await dashboardService.getStats()
+        setStats(statsData)
 
-        // 模拟数据
-        const mockStats: DashboardStats = {
-          wps_count: 15,
-          pqr_count: 8,
-          ppqr_count: 3,
-          materials_count: 25,
-          welders_count: 12,
-          equipment_count: 6,
-          active_tasks: 4,
-          pending_inspections: 2,
-          storage_used_mb: 125,
-          storage_limit_mb: 500,
-          membership_usage: {
-            wps_usage: 15,
-            pqr_usage: 8,
-            ppqr_usage: 3,
-            materials_usage: 25,
-            welders_usage: 12,
-            equipment_usage: 6,
-          },
-        }
+        // 获取最近活动
+        const activities = await dashboardService.getRecentActivities(10)
+        setRecentActivities(activities)
 
-        const mockRecentWPS: WPSRecord[] = [
-          {
-            id: '1',
-            wps_number: 'WPS-2024-001',
-            title: '碳钢管道对接焊工艺',
-            status: 'approved',
-            priority: 'normal',
-            base_material: 'Q235',
-            welding_process: 'SMAW',
-            created_at: '2024-01-15T10:30:00Z',
-            updated_at: '2024-01-15T10:30:00Z',
-            user_id: user?.id || '',
-            view_count: 25,
-            download_count: 5,
-          } as WPSRecord,
-          {
-            id: '2',
-            wps_number: 'WPS-2024-002',
-            title: '不锈钢容器角焊缝工艺',
-            status: 'review',
-            priority: 'high',
-            base_material: '304',
-            welding_process: 'GTAW',
-            created_at: '2024-01-14T15:20:00Z',
-            updated_at: '2024-01-15T09:10:00Z',
-            user_id: user?.id || '',
-            view_count: 18,
-            download_count: 2,
-          } as WPSRecord,
-        ]
-
-        const mockRecentPQR: PQRRecord[] = [
-          {
-            id: '1',
-            pqr_number: 'PQR-2024-001',
-            title: '管道对接焊工艺评定',
-            status: 'qualified',
-            test_date: '2024-01-10',
-            base_material: 'Q235',
-            welding_process: 'SMAW',
-            created_at: '2024-01-10T16:45:00Z',
-            updated_at: '2024-01-10T16:45:00Z',
-            user_id: user?.id || '',
-          } as PQRRecord,
-          {
-            id: '2',
-            pqr_number: 'PQR-2024-002',
-            title: '不锈钢角焊缝工艺评定',
-            status: 'pending',
-            test_date: '2024-01-12',
-            base_material: '304',
-            welding_process: 'GTAW',
-            created_at: '2024-01-12T14:30:00Z',
-            updated_at: '2024-01-12T14:30:00Z',
-            user_id: user?.id || '',
-          } as PQRRecord,
-        ]
-
-        setStats(mockStats)
-        setRecentWPS(mockRecentWPS)
-        setRecentPQR(mockRecentPQR)
       } catch (error) {
         console.error('Failed to load dashboard data:', error)
+        message.error('加载仪表盘数据失败')
       } finally {
         setLoading(false)
       }
@@ -285,16 +212,19 @@ const Dashboard: React.FC = () => {
       dataIndex: 'wps_number',
       key: 'wps_number',
       render: (text: string, record: WPSRecord) => (
-        <Button type="link" onClick={() => navigate(`/wps/${record.id}`)}>
-          {text}
-        </Button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <Button
+            type="link"
+            onClick={() => navigate(`/wps/${record.id}`)}
+            style={{ padding: 0, height: 'auto', textAlign: 'left' }}
+          >
+            {text}
+          </Button>
+          <Text type="secondary" style={{ fontSize: '12px' }} ellipsis={{ tooltip: record.title }}>
+            {record.title}
+          </Text>
+        </div>
       ),
-    },
-    {
-      title: '标题',
-      dataIndex: 'title',
-      key: 'title',
-      ellipsis: true,
     },
     {
       title: '状态',
@@ -343,16 +273,19 @@ const Dashboard: React.FC = () => {
       dataIndex: 'pqr_number',
       key: 'pqr_number',
       render: (text: string, record: PQRRecord) => (
-        <Button type="link" onClick={() => navigate(`/pqr/${record.id}`)}>
-          {text}
-        </Button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <Button
+            type="link"
+            onClick={() => navigate(`/pqr/${record.id}`)}
+            style={{ padding: 0, height: 'auto', textAlign: 'left' }}
+          >
+            {text}
+          </Button>
+          <Text type="secondary" style={{ fontSize: '12px' }} ellipsis={{ tooltip: record.title }}>
+            {record.title}
+          </Text>
+        </div>
       ),
-    },
-    {
-      title: '标题',
-      dataIndex: 'title',
-      key: 'title',
-      ellipsis: true,
     },
     {
       title: '状态',
@@ -363,10 +296,10 @@ const Dashboard: React.FC = () => {
       ),
     },
     {
-      title: '测试日期',
-      dataIndex: 'test_date',
-      key: 'test_date',
-      render: (date: string) => date && new Date(date).toLocaleDateString(),
+      title: '鉴定日期',
+      dataIndex: 'qualification_date',
+      key: 'qualification_date',
+      render: (date: string) => date ? new Date(date).toLocaleDateString() : '-',
     },
     {
       title: '操作',
@@ -601,14 +534,14 @@ const Dashboard: React.FC = () => {
                         <div className="overview-number">{stats?.wps_count || 0}</div>
                         <div className="overview-progress">
                           <Progress
-                            percent={quotas.wps > 0 ? ((stats?.membership_usage.wps_usage || 0) / quotas.wps) * 100 : 0}
+                            percent={stats?.membership_usage.wps_limit > 0 ? ((stats?.membership_usage.wps_usage || 0) / stats.membership_usage.wps_limit) * 100 : 0}
                             size="small"
                             showInfo={false}
                             strokeColor="#1890ff"
-                            status={quotas.wps > 0 && ((stats?.membership_usage.wps_usage || 0) / quotas.wps) >= 0.8 ? 'exception' : 'normal'}
+                            status={stats?.membership_usage.wps_limit > 0 && ((stats?.membership_usage.wps_usage || 0) / stats.membership_usage.wps_limit) >= 0.8 ? 'exception' : 'normal'}
                           />
                           <Text type="secondary" className="progress-text">
-                            {quotas.wps > 0 ? `${stats?.membership_usage.wps_usage || 0}/${quotas.wps}` : '未开通'}
+                            {stats?.membership_usage.wps_limit > 0 ? `${stats?.membership_usage.wps_usage || 0}/${stats.membership_usage.wps_limit}` : '未开通'}
                           </Text>
                         </div>
                       </div>
@@ -626,14 +559,14 @@ const Dashboard: React.FC = () => {
                         <div className="overview-number">{stats?.pqr_count || 0}</div>
                         <div className="overview-progress">
                           <Progress
-                            percent={quotas.pqr > 0 ? ((stats?.membership_usage.pqr_usage || 0) / quotas.pqr) * 100 : 0}
+                            percent={stats?.membership_usage.pqr_limit > 0 ? ((stats?.membership_usage.pqr_usage || 0) / stats.membership_usage.pqr_limit) * 100 : 0}
                             size="small"
                             showInfo={false}
                             strokeColor="#52c41a"
-                            status={quotas.pqr > 0 && ((stats?.membership_usage.pqr_usage || 0) / quotas.pqr) >= 0.8 ? 'exception' : 'normal'}
+                            status={stats?.membership_usage.pqr_limit > 0 && ((stats?.membership_usage.pqr_usage || 0) / stats.membership_usage.pqr_limit) >= 0.8 ? 'exception' : 'normal'}
                           />
                           <Text type="secondary" className="progress-text">
-                            {quotas.pqr > 0 ? `${stats?.membership_usage.pqr_usage || 0}/${quotas.pqr}` : '未开通'}
+                            {stats?.membership_usage.pqr_limit > 0 ? `${stats?.membership_usage.pqr_usage || 0}/${stats.membership_usage.pqr_limit}` : '未开通'}
                           </Text>
                         </div>
                       </div>
@@ -651,14 +584,14 @@ const Dashboard: React.FC = () => {
                         <div className="overview-number">{stats?.ppqr_count || 0}</div>
                         <div className="overview-progress">
                           <Progress
-                            percent={quotas.ppqr > 0 ? ((stats?.membership_usage.ppqr_usage || 0) / quotas.ppqr) * 100 : 0}
+                            percent={stats?.membership_usage.ppqr_limit > 0 ? ((stats?.membership_usage.ppqr_usage || 0) / stats.membership_usage.ppqr_limit) * 100 : 0}
                             size="small"
                             showInfo={false}
                             strokeColor="#722ed1"
-                            status={quotas.ppqr > 0 && ((stats?.membership_usage.ppqr_usage || 0) / quotas.ppqr) >= 0.8 ? 'exception' : 'normal'}
+                            status={stats?.membership_usage.ppqr_limit > 0 && ((stats?.membership_usage.ppqr_usage || 0) / stats.membership_usage.ppqr_limit) >= 0.8 ? 'exception' : 'normal'}
                           />
                           <Text type="secondary" className="progress-text">
-                            {quotas.ppqr > 0 ? `${stats?.membership_usage.ppqr_usage || 0}/${quotas.ppqr}` : '未开通'}
+                            {stats?.membership_usage.ppqr_limit > 0 ? `${stats?.membership_usage.ppqr_usage || 0}/${stats.membership_usage.ppqr_limit}` : '未开通'}
                           </Text>
                         </div>
                       </div>
@@ -674,18 +607,9 @@ const Dashboard: React.FC = () => {
                       <div className="overview-info">
                         <div className="overview-title">认证焊工</div>
                         <div className="overview-number">{stats?.welders_count || 0}</div>
-                        <div className="overview-progress">
-                          <Progress
-                            percent={quotas.welders > 0 ? ((stats?.membership_usage.welders_usage || 0) / quotas.welders) * 100 : 0}
-                            size="small"
-                            showInfo={false}
-                            strokeColor="#fa8c16"
-                            status={quotas.welders > 0 && ((stats?.membership_usage.welders_usage || 0) / quotas.welders) >= 0.8 ? 'exception' : 'normal'}
-                          />
-                          <Text type="secondary" className="progress-text">
-                            {quotas.welders > 0 ? `${stats?.membership_usage.welders_usage || 0}/${quotas.welders}` : '未开通'}
-                          </Text>
-                        </div>
+                        <Text type="secondary" className="progress-text">
+                          总数
+                        </Text>
                       </div>
                     </div>
                   </Card>
@@ -696,7 +620,7 @@ const Dashboard: React.FC = () => {
         </Row>
       </div>
 
-      {/* 最近记录 */}
+        {/* 最近记录 */}
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
           <Card
@@ -708,7 +632,7 @@ const Dashboard: React.FC = () => {
             }
           >
             <Table
-              dataSource={recentWPS}
+              dataSource={recentActivities.filter(activity => activity.type === 'wps').slice(0, 5)}
               columns={wpsColumns}
               pagination={false}
               size="small"
@@ -727,7 +651,7 @@ const Dashboard: React.FC = () => {
             }
           >
             <Table
-              dataSource={recentPQR}
+              dataSource={recentActivities.filter(activity => activity.type === 'pqr').slice(0, 5)}
               columns={pqrColumns}
               pagination={false}
               size="small"

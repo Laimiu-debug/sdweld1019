@@ -146,35 +146,44 @@ const Login: React.FC = () => {
 
   // 验证码登录
   const handleVerificationLogin = async (values: VerificationForm) => {
+    console.log('🚀 开始处理验证码登录请求')
     setLoading(true)
     setError('')
 
     try {
       const { isEmail, isPhone } = detectAccountType(values.account)
 
-      // 这里需要调用验证码登录的API
-      const response = await fetch('/api/v1/auth/login-with-verification-code', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          account: values.account,
-          verification_code: values.verificationCode,
-          account_type: isEmail ? 'email' : 'phone'
-        })
+      if (!isEmail && !isPhone) {
+        setError('请输入有效的邮箱地址或手机号')
+        setLoading(false)
+        return
+      }
+
+      // 使用 authService 的验证码登录方法
+      console.log('📞 调用 authService.loginWithVerificationCode')
+      const success = await authService.loginWithVerificationCode({
+        account: values.account,
+        verification_code: values.verificationCode,
+        account_type: isEmail ? 'email' : 'phone'
       })
 
-      if (response.ok) {
-        const data = await response.json()
-        // 这里需要处理登录成功的逻辑，保存token等
+      console.log('📊 验证码登录结果:', success)
+
+      if (success) {
+        console.log('✅ 验证码登录成功，准备跳转到 /dashboard')
         message.success('登录成功！')
-        navigate('/dashboard')
+
+        // 使用 setTimeout 确保状态更新完成后再跳转
+        setTimeout(() => {
+          console.log('🔄 执行页面跳转')
+          navigate('/dashboard', { replace: true })
+        }, 100)
       } else {
-        const errorData = await response.json()
-        setError(errorData.detail || '验证码错误')
+        console.error('❌ 验证码登录失败')
+        setError('验证码错误或已过期，请重新获取')
       }
     } catch (error) {
+      console.error('❌ 验证码登录异常:', error)
       setError('登录失败，请稍后重试')
     } finally {
       setLoading(false)
@@ -390,12 +399,26 @@ const Login: React.FC = () => {
             ]}
           />
 
-  
+
           <div className="text-center">
             <Space direction="vertical" size="small">
               <Text type="secondary">还没有账号？</Text>
               <Link to="/register" className="text-blue-600 font-medium">
                 立即注册
+              </Link>
+            </Space>
+          </div>
+
+          <Divider />
+
+          {/* 法律政策链接 */}
+          <div className="text-center">
+            <Space split={<Divider type="vertical" />} size="small">
+              <Link to="/privacy-policy" style={{ fontSize: '12px', color: '#8c8c8c' }}>
+                隐私政策
+              </Link>
+              <Link to="/terms-of-service" style={{ fontSize: '12px', color: '#8c8c8c' }}>
+                用户协议
               </Link>
             </Space>
           </div>

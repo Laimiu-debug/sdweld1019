@@ -5,6 +5,7 @@ import {
   UserOutlined,
   TeamOutlined,
   CreditCardOutlined,
+  DollarOutlined,
   MonitorOutlined,
   BarChartOutlined,
   NotificationOutlined,
@@ -14,6 +15,8 @@ import {
   BellOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  ShareAltOutlined,
+  TagsOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuthContext } from '@/contexts/AuthContext';
@@ -48,6 +51,16 @@ const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
       label: '订阅管理',
     },
     {
+      key: '/pricing',
+      icon: <TagsOutlined />,
+      label: '价格管理',
+    },
+    {
+      key: '/payments',
+      icon: <DollarOutlined />,
+      label: '支付订单',
+    },
+    {
       key: '/system',
       icon: <MonitorOutlined />,
       label: '系统监控',
@@ -61,6 +74,11 @@ const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
       key: '/announcements',
       icon: <NotificationOutlined />,
       label: '公告管理',
+    },
+    {
+      key: '/shared-library',
+      icon: <ShareAltOutlined />,
+      label: '共享库管理',
     },
     {
       key: '/config',

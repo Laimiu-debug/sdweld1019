@@ -26,13 +26,40 @@ async def get_subscription_plans_admin(
 ) -> Any:
     """
     获取订阅计划列表（管理员专用）
+    返回所有计划，包括已停用的
     """
-    membership_service = MembershipService(db)
-    plans = membership_service.get_subscription_plans()
+    # 获取所有订阅计划（包括停用的）
+    plans = db.query(SubscriptionPlan).order_by(SubscriptionPlan.sort_order).all()
+
+    result = []
+    for plan in plans:
+        result.append({
+            "id": plan.id,
+            "name": plan.name,
+            "description": plan.description,
+            "monthly_price": plan.monthly_price,
+            "quarterly_price": plan.quarterly_price,
+            "yearly_price": plan.yearly_price,
+            "currency": plan.currency,
+            "max_wps_files": plan.max_wps_files,
+            "max_pqr_files": plan.max_pqr_files,
+            "max_ppqr_files": plan.max_ppqr_files,
+            "max_materials": plan.max_materials,
+            "max_welders": plan.max_welders,
+            "max_equipment": plan.max_equipment,
+            "max_factories": plan.max_factories,
+            "max_employees": plan.max_employees,
+            "features": plan.features.split(",") if plan.features else [],
+            "sort_order": plan.sort_order,
+            "is_recommended": plan.is_recommended,
+            "is_active": plan.is_active,
+            "created_at": plan.created_at.isoformat() if plan.created_at else None,
+            "updated_at": plan.updated_at.isoformat() if plan.updated_at else None,
+        })
 
     return {
         "success": True,
-        "data": plans
+        "data": result
     }
 
 
@@ -81,8 +108,8 @@ async def create_subscription_plan_admin(
     system_service.create_system_log(
         log_level="info",
         log_type="admin",
-        message=f"管理员 {current_admin.user.email} 创建了订阅计划: {plan.name}",
-        user_id=current_admin.user_id,
+        message=f"管理员 {current_admin.email} 创建了订阅计划: {plan.name}",
+        user_id=current_admin.user_id if current_admin.user_id else None,
         details={"plan_id": plan.id}
     )
 
@@ -159,8 +186,8 @@ async def update_subscription_plan_admin(
     system_service.create_system_log(
         log_level="info",
         log_type="admin",
-        message=f"管理员 {current_admin.user.email} 更新了订阅计划: {plan.name}",
-        user_id=current_admin.user_id,
+        message=f"管理员 {current_admin.email} 更新了订阅计划: {plan.name}",
+        user_id=current_admin.user_id if current_admin.user_id else None,
         details={"plan_id": plan.id}
     )
 
@@ -170,6 +197,114 @@ async def update_subscription_plan_admin(
         "data": {
             "id": plan.id,
             "name": plan.name
+        }
+    }
+
+
+@router.post("/subscription-plans/batch-discount")
+async def batch_set_discount_admin(
+    discount_data: Dict[str, Any],
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_active_admin)
+) -> Any:
+    """
+    批量设置订阅计划折扣（管理员专用，需要超级管理员权限）
+
+    支持两种折扣方式：
+    1. 按百分比折扣：discount_percent (0-100)
+    2. 按固定金额降价：discount_amount
+
+    请求体示例：
+    {
+        "plan_ids": ["personal_pro", "personal_advanced"],
+        "discount_type": "percent",  // "percent" 或 "amount"
+        "monthly_discount": 10,      // 百分比或金额
+        "quarterly_discount": 15,
+        "yearly_discount": 20
+    }
+    """
+    if current_admin.admin_level != "super_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="需要超级管理员权限"
+        )
+
+    plan_ids = discount_data.get("plan_ids", [])
+    discount_type = discount_data.get("discount_type", "percent")  # "percent" 或 "amount"
+    monthly_discount = discount_data.get("monthly_discount", 0)
+    quarterly_discount = discount_data.get("quarterly_discount", 0)
+    yearly_discount = discount_data.get("yearly_discount", 0)
+
+    if not plan_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请选择至少一个订阅计划"
+        )
+
+    updated_plans = []
+    for plan_id in plan_ids:
+        plan = db.query(SubscriptionPlan).filter(SubscriptionPlan.id == plan_id).first()
+        if not plan:
+            continue
+
+        # 保存原价格用于日志
+        original_prices = {
+            "monthly": plan.monthly_price,
+            "quarterly": plan.quarterly_price,
+            "yearly": plan.yearly_price
+        }
+
+        # 应用折扣
+        if discount_type == "percent":
+            # 按百分比折扣
+            if monthly_discount > 0:
+                plan.monthly_price = round(plan.monthly_price * (1 - monthly_discount / 100), 2)
+            if quarterly_discount > 0:
+                plan.quarterly_price = round(plan.quarterly_price * (1 - quarterly_discount / 100), 2)
+            if yearly_discount > 0:
+                plan.yearly_price = round(plan.yearly_price * (1 - yearly_discount / 100), 2)
+        else:
+            # 按固定金额降价
+            if monthly_discount > 0:
+                plan.monthly_price = max(0, round(plan.monthly_price - monthly_discount, 2))
+            if quarterly_discount > 0:
+                plan.quarterly_price = max(0, round(plan.quarterly_price - quarterly_discount, 2))
+            if yearly_discount > 0:
+                plan.yearly_price = max(0, round(plan.yearly_price - yearly_discount, 2))
+
+        plan.updated_at = datetime.utcnow()
+        updated_plans.append({
+            "plan_id": plan.id,
+            "plan_name": plan.name,
+            "original_prices": original_prices,
+            "new_prices": {
+                "monthly": plan.monthly_price,
+                "quarterly": plan.quarterly_price,
+                "yearly": plan.yearly_price
+            }
+        })
+
+    db.commit()
+
+    # 记录操作日志
+    system_service = SystemService(db)
+    system_service.create_system_log(
+        log_level="info",
+        log_type="admin",
+        message=f"管理员 {current_admin.email} 批量调整了 {len(updated_plans)} 个订阅计划的价格",
+        user_id=current_admin.user_id if current_admin.user_id else None,
+        details={
+            "discount_type": discount_type,
+            "updated_plans": updated_plans
+        }
+    )
+
+    return {
+        "success": True,
+        "message": f"成功调整 {len(updated_plans)} 个订阅计划的价格",
+        "data": {
+            "updated_count": len(updated_plans),
+            "updated_plans": updated_plans
         }
     }
 
@@ -205,8 +340,8 @@ async def delete_subscription_plan_admin(
     system_service.create_system_log(
         log_level="info",
         log_type="admin",
-        message=f"管理员 {current_admin.user.email} 删除了订阅计划: {plan_name}",
-        user_id=current_admin.user_id,
+        message=f"管理员 {current_admin.email} 删除了订阅计划: {plan_name}",
+        user_id=current_admin.user_id if current_admin.user_id else None,
         details={"plan_id": plan_id}
     )
 
@@ -393,8 +528,8 @@ async def upgrade_user_membership_admin(
     system_service.create_system_log(
         log_level="info",
         log_type="admin",
-        message=f"管理员 {current_admin.user.email} 将用户 {user.email} 会员等级升级为 {new_tier}",
-        user_id=current_admin.user_id,
+        message=f"管理员 {current_admin.email} 将用户 {user.email} 会员等级升级为 {new_tier}",
+        user_id=current_admin.user_id if current_admin.user_id else None,
         details={
             "target_user_id": user_id,
             "old_tier": user.member_tier,
@@ -468,8 +603,8 @@ async def process_subscription_renewal_admin(
     system_service.create_system_log(
         log_level="info",
         log_type="admin",
-        message=f"管理员 {current_admin.user.email} 手动处理了用户 {subscription.user.email} 的订阅续费",
-        user_id=current_admin.user_id,
+        message=f"管理员 {current_admin.email} 手动处理了用户 {subscription.user.email} 的订阅续费",
+        user_id=current_admin.user_id if current_admin.user_id else None,
         details={
             "subscription_id": subscription_id,
             "user_id": subscription.user_id

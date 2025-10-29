@@ -94,21 +94,22 @@ export interface SystemLog {
 }
 
 export interface SystemAnnouncement {
-  id: string;
+  id: number;
   title: string;
   content: string;
-  announcement_type: 'info' | 'warning' | 'maintenance';
+  announcement_type: 'info' | 'warning' | 'error' | 'success' | 'maintenance';
   priority: 'low' | 'normal' | 'high' | 'urgent';
   is_published: boolean;
   is_pinned: boolean;
-  target_audience: 'all' | 'free' | 'pro' | 'enterprise';
+  is_auto_generated?: boolean;  // 是否为系统自动生成
+  target_audience: 'all' | 'user' | 'enterprise';
   publish_at?: string;
   expire_at?: string;
   view_count: number;
   created_at: string;
-  created_by: string;
+  created_by?: number;  // 可选，自动生成的公告可能没有创建者
   updated_at?: string;
-  updated_by?: string;
+  updated_by?: number;
 }
 
 export interface UserStatistics {

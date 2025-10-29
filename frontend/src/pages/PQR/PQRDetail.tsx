@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import {
   Card,
   Typography,
@@ -7,348 +7,315 @@ import {
   Space,
   Tag,
   Descriptions,
-  Row,
-  Col,
-  Alert,
-  Tabs,
-  Table,
-  Image,
-  Divider,
   Spin,
   message,
-  Modal,
+  Divider,
+  Empty,
+  Tabs,
+  Row,
+  Col,
+  Image,
+  Table,
+  Badge
 } from 'antd'
 import {
   ArrowLeftOutlined,
   EditOutlined,
   DownloadOutlined,
+  CopyOutlined,
   FileTextOutlined,
+  ToolOutlined,
+  ExperimentOutlined,
+  ThunderboltOutlined,
+  DashboardOutlined,
+  SettingOutlined,
+  CalculatorOutlined,
   CheckCircleOutlined,
-  CloseCircleOutlined,
   ClockCircleOutlined,
-  PrinterOutlined,
-  ShareAltOutlined,
+  CloseCircleOutlined,
+  SyncOutlined,
+  HistoryOutlined
 } from '@ant-design/icons'
-import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
+import pqrService from '@/services/pqr'
+import { getPQRModuleById } from '@/constants/pqrModules'
+import customModuleService from '@/services/customModules'
 import dayjs from 'dayjs'
-import { PQRRecord, PQRStatus } from '@/types'
+import { ApprovalButton } from '@/components/Approval/ApprovalButton'
+import { ApprovalHistory } from '@/components/Approval/ApprovalHistory'
 import { useAuthStore } from '@/store/authStore'
 
 const { Title, Text } = Typography
-const { TabPane } = Tabs
 
-interface PQRDetailData extends PQRRecord {
-  // 扩展字段
-  base_material_thickness: number
-  filler_material_diameter: number
-  joint_type: string
-  welding_position: string
-  tensile_strength: number
-  yield_strength: number
-  elongation: number
-  impact_energy: number
-  bend_test_result: string
-  macro_examination: string
-  notes?: string
-  attachments?: Array<{
-    id: string
-    name: string
-    type: string
-    size: number
-    url: string
-  }>
-  test_results?: Array<{
-    test_type: string
-    result: string
-    standard: string
-    actual_value: string
-    qualified: boolean
-  }>
-  wps_info?: {
-    id: string
-    wps_number: string
-    title: string
-  }
+interface PQRDetailData {
+  id: number
+  title: string
+  pqr_number: string
+  revision: string
+  status: string
+  test_date?: string
+  test_organization?: string
+  qualification_result?: string
+  template_id?: string
+  modules_data?: Record<string, any>
+  created_at: string
+  updated_at: string
+  [key: string]: any
 }
 
 const PQRDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { checkPermission } = useAuthStore()
-  const [previewVisible, setPreviewVisible] = useState(false)
-  const [previewImage, setPreviewImage] = useState('')
+  const { user } = useAuthStore()
+  const [pqrData, setPqrData] = useState<PQRDetailData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [customModulesCache, setCustomModulesCache] = useState<Record<string, any>>({})
 
-  // 模拟API调用获取PQR详情
-  const fetchPQRDetail = async (pqrId: string): Promise<{ success: boolean; data: PQRDetailData }> => {
-    // 模拟API延迟
-    await new Promise(resolve => setTimeout(resolve, 500))
-
-    // 模拟详细数据
-    const mockData: PQRDetailData = {
-      id: pqrId,
-      pqr_number: 'PQR-2024-001',
-      title: '管道对接焊工艺评定',
-      status: 'qualified',
-      test_date: '2024-01-10',
-      test_organization: '第三方检测机构',
-      base_material: 'Q235',
-      base_material_thickness: 12.0,
-      filler_material: 'E7018',
-      filler_material_diameter: 3.2,
-      welding_process: 'SMAW',
-      joint_type: 'Butt Joint',
-      welding_position: '1G',
-      tensile_strength: 520,
-      yield_strength: 360,
-      elongation: 25,
-      impact_energy: 120,
-      bend_test_result: '面弯和背弯试验均无裂纹，符合标准要求',
-      macro_examination: '焊缝成型良好，无气孔、夹渣等缺陷',
-      notes: '本次工艺评定针对管道对接焊缝，焊接工艺参数合理，测试结果满足标准要求',
-      wps_id: 'wps1',
-      created_at: '2024-01-10T16:45:00Z',
-      updated_at: '2024-01-10T16:45:00Z',
-      user_id: 'user1',
-      attachments: [
-        {
-          id: '1',
-          name: '拉伸试验报告.pdf',
-          type: 'application/pdf',
-          size: 1024000,
-          url: '/api/files/1.pdf',
-        },
-        {
-          id: '2',
-          name: '弯曲试验照片.jpg',
-          type: 'image/jpeg',
-          size: 2048000,
-          url: '/api/files/2.jpg',
-        },
-        {
-          id: '3',
-          name: '宏观检查报告.pdf',
-          type: 'application/pdf',
-          size: 800000,
-          url: '/api/files/3.pdf',
-        },
-      ],
-      test_results: [
-        {
-          test_type: '拉伸试验',
-          result: '合格',
-          standard: 'ASME IX QW-150',
-          actual_value: '抗拉强度 520MPa',
-          qualified: true,
-        },
-        {
-          test_type: '弯曲试验',
-          result: '合格',
-          standard: 'ASME IX QW-160',
-          actual_value: '面弯180°无裂纹',
-          qualified: true,
-        },
-        {
-          test_type: '冲击试验',
-          result: '合格',
-          standard: 'ASME IX QW-170',
-          actual_value: '冲击能量 120J',
-          qualified: true,
-        },
-        {
-          test_type: '宏观检查',
-          result: '合格',
-          standard: 'ASME IX QW-180',
-          actual_value: '焊缝成型良好',
-          qualified: true,
-        },
-      ],
-      wps_info: {
-        id: 'wps1',
-        wps_number: 'WPS-2024-001',
-        title: '碳钢管道对接焊工艺',
-      },
+  // 获取分类图标
+  const getCategoryIcon = (category: string) => {
+    const iconMap: Record<string, React.ReactNode> = {
+      basic: <FileTextOutlined style={{ color: '#1890ff' }} />,
+      material: <ToolOutlined style={{ color: '#52c41a' }} />,
+      gas: <ExperimentOutlined style={{ color: '#faad14' }} />,
+      electrical: <ThunderboltOutlined style={{ color: '#f5222d' }} />,
+      motion: <DashboardOutlined style={{ color: '#722ed1' }} />,
+      equipment: <SettingOutlined style={{ color: '#13c2c2' }} />,
+      calculation: <CalculatorOutlined style={{ color: '#eb2f96' }} />
     }
-
-    return { success: true, data: mockData }
+    return iconMap[category] || <FileTextOutlined />
   }
 
-  // 获取PQR详情
-  const {
-    data: pqrData,
-    isLoading,
-    error,
-  } = useQuery({
-    queryKey: ['pqrDetail', id],
-    queryFn: () => fetchPQRDetail(id!),
-    enabled: !!id,
-  })
+  // 获取分类名称
+  const getCategoryName = (category: string) => {
+    const categoryMap: Record<string, string> = {
+      basic: '基本信息',
+      material: '材料信息',
+      gas: '气体信息',
+      electrical: '电气参数',
+      motion: '运动参数',
+      equipment: '设备信息',
+      calculation: '计算结果'
+    }
+    return categoryMap[category] || category
+  }
 
-  const pqr = pqrData?.data
+  // 从 modules_data 中提取所有字段
+  const extractAllFieldsFromModules = (modulesData: any) => {
+    const extracted: Record<string, any> = {}
+
+    if (!modulesData) return extracted
+
+    Object.values(modulesData).forEach((module: any) => {
+      if (module && module.data) {
+        Object.assign(extracted, module.data)
+      }
+    })
+
+    return extracted
+  }
+
+  // 获取 PQR 详情和自定义模块
+  useEffect(() => {
+    const fetchPQRDetail = async () => {
+      if (!id) return
+
+      try {
+        setLoading(true)
+
+        // 获取 PQR 数据
+        const response = await pqrService.get(parseInt(id))
+        if (response.success && response.data) {
+          setPqrData(response.data)
+
+          // 获取自定义模块定义
+          if (response.data.modules_data) {
+            const customModuleIds = new Set<string>()
+            Object.values(response.data.modules_data).forEach((module: any) => {
+              if (module.moduleId && !getPQRModuleById(module.moduleId)) {
+                customModuleIds.add(module.moduleId)
+              }
+            })
+
+            // 加载自定义模块定义
+            const customModules: Record<string, any> = {}
+            for (const moduleId of customModuleIds) {
+              try {
+                const moduleData = await customModuleService.getCustomModule(moduleId)
+                customModules[moduleId] = moduleData
+              } catch (error) {
+                console.error(`加载自定义模块 ${moduleId} 失败:`, error)
+              }
+            }
+            setCustomModulesCache(customModules)
+          }
+        } else {
+          message.error(response.message || '获取PQR详情失败')
+        }
+      } catch (error: any) {
+        console.error('获取PQR详情失败:', error)
+        message.error(error.response?.data?.detail || '获取PQR详情失败')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchPQRDetail()
+  }, [id])
+
+  // 处理编辑
+  const handleEdit = () => {
+    navigate(`/pqr/${id}/edit`)
+  }
+
+  // 处理复制
+  const handleCopy = async () => {
+    if (!pqrData) return
+    try {
+      // 创建新的 PQR 数据，去掉 id 和时间戳
+      const copyData = {
+        ...pqrData,
+        title: `${pqrData.title} (副本)`,
+        pqr_number: `${pqrData.pqr_number}-COPY-${Date.now()}`,
+        status: 'draft',
+      }
+      delete (copyData as any).id
+      delete (copyData as any).created_at
+      delete (copyData as any).updated_at
+
+      // 创建新 PQR
+      const response = await pqrService.create(copyData)
+      if (response.success) {
+        message.success('复制成功')
+        navigate('/pqr')
+      } else {
+        message.error(response.message || '复制失败')
+      }
+    } catch (error: any) {
+      console.error('复制PQR失败:', error)
+      message.error(error.response?.data?.detail || '复制失败')
+    }
+  }
+
+  // 渲染字段值
+  const renderFieldValue = (fieldKey: string, value: any, fieldDef?: any) => {
+    if (value === null || value === undefined || value === '') {
+      return <Text type="secondary">-</Text>
+    }
+
+    // 如果是文件上传字段
+    if (fieldDef?.type === 'file' || fieldDef?.type === 'image') {
+      if (Array.isArray(value)) {
+        return (
+          <Space wrap>
+            {value.map((file: any, index: number) => (
+              <a key={index} href={file.url} target="_blank" rel="noopener noreferrer">
+                {file.name || `文件${index + 1}`}
+              </a>
+            ))}
+          </Space>
+        )
+      }
+    }
+
+    // 如果是图片字段
+    if (fieldDef?.type === 'image' && Array.isArray(value)) {
+      return (
+        <Image.PreviewGroup>
+          <Space wrap>
+            {value.map((img: any, index: number) => (
+              <Image
+                key={index}
+                width={100}
+                src={img.url || img.thumbUrl}
+                alt={img.name || `图片${index + 1}`}
+              />
+            ))}
+          </Space>
+        </Image.PreviewGroup>
+      )
+    }
+
+    // 如果是表格字段
+    if (fieldDef?.type === 'table' && Array.isArray(value)) {
+      const columns = fieldDef.tableDefinition?.columns || []
+      const tableColumns = columns.map((col: any) => ({
+        title: col.label,
+        dataIndex: col.key,
+        key: col.key,
+      }))
+      return (
+        <Table
+          size="small"
+          columns={tableColumns}
+          dataSource={value}
+          pagination={false}
+          bordered
+        />
+      )
+    }
+
+    // 如果是对象
+    if (typeof value === 'object') {
+      return <Text code>{JSON.stringify(value, null, 2)}</Text>
+    }
+
+    // 如果是布尔值
+    if (typeof value === 'boolean') {
+      return value ? <Tag color="success">是</Tag> : <Tag color="default">否</Tag>
+    }
+
+    // 普通值
+    return <Text>{String(value)}</Text>
+  }
+
+  if (loading) {
+    return (
+      <div className="page-container">
+        <Spin size="large" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '400px' }} />
+      </div>
+    )
+  }
+
+  if (!pqrData) {
+    return (
+      <div className="page-container">
+        <div className="page-header">
+          <Button
+            icon={<ArrowLeftOutlined />}
+            onClick={() => navigate('/pqr')}
+          >
+            返回列表
+          </Button>
+          <Title level={2}>PQR详情</Title>
+        </div>
+        <Card>
+          <Empty description="未找到PQR数据" />
+        </Card>
+      </div>
+    )
+  }
+
+  // 提取模块数据
+  const moduleFields = extractAllFieldsFromModules(pqrData.modules_data)
 
   // 获取状态配置
-  const getStatusConfig = (status: PQRStatus) => {
-    const configs = {
-      pending: {
-        color: 'processing',
-        icon: <ClockCircleOutlined />,
-        text: '待处理',
-      },
-      qualified: {
-        color: 'success',
-        icon: <CheckCircleOutlined />,
-        text: '合格',
-      },
-      failed: {
-        color: 'error',
-        icon: <CloseCircleOutlined />,
-        text: '不合格',
-      },
+  const getStatusConfig = (status: string) => {
+    const configMap: Record<string, { color: string; icon: React.ReactNode; text: string }> = {
+      draft: { color: 'default', icon: <EditOutlined />, text: '草稿' },
+      review: { color: 'processing', icon: <SyncOutlined spin />, text: '审核中' },
+      qualified: { color: 'success', icon: <CheckCircleOutlined />, text: '合格' },
+      failed: { color: 'error', icon: <CloseCircleOutlined />, text: '不合格' },
     }
-    return configs[status] || configs.pending
+    return configMap[status] || { color: 'default', icon: <ClockCircleOutlined />, text: status }
   }
 
-  // 处理下载
-  const handleDownload = (type: 'pdf' | 'excel', attachmentId?: string) => {
-    if (attachmentId) {
-      message.info(`开始下载附件`)
-    } else {
-      message.info(`开始导出${type.toUpperCase()}格式`)
-    }
-  }
-
-  // 处理图片预览
-  const handleImagePreview = (url: string) => {
-    setPreviewImage(url)
-    setPreviewVisible(true)
-  }
-
-  // 处理打印
-  const handlePrint = () => {
-    window.print()
-  }
-
-  // 处理分享
-  const handleShare = () => {
-    message.info('分享功能开发中')
-  }
-
-  // 测试结果表格列
-  const testResultColumns = [
-    {
-      title: '测试项目',
-      dataIndex: 'test_type',
-      key: 'test_type',
-    },
-    {
-      title: '标准要求',
-      dataIndex: 'standard',
-      key: 'standard',
-    },
-    {
-      title: '实际结果',
-      dataIndex: 'actual_value',
-      key: 'actual_value',
-    },
-    {
-      title: '结果',
-      dataIndex: 'result',
-      key: 'result',
-      render: (result: string, record: any) => (
-        <Tag color={record.qualified ? 'success' : 'error'}>
-          {result}
-        </Tag>
-      ),
-    },
-  ]
-
-  // 附件列表列
-  const attachmentColumns = [
-    {
-      title: '文件名',
-      dataIndex: 'name',
-      key: 'name',
-      render: (name: string, record: any) => (
-        <Space>
-          <FileTextOutlined />
-          <span>{name}</span>
-        </Space>
-      ),
-    },
-    {
-      title: '类型',
-      dataIndex: 'type',
-      key: 'type',
-      render: (type: string) => {
-        const typeMap: Record<string, string> = {
-          'application/pdf': 'PDF',
-          'image/jpeg': 'JPEG',
-          'image/png': 'PNG',
-        }
-        return typeMap[type] || type
-      },
-    },
-    {
-      title: '大小',
-      dataIndex: 'size',
-      key: 'size',
-      render: (size: number) => {
-        if (size < 1024) return `${size} B`
-        if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-        return `${(size / (1024 * 1024)).toFixed(1)} MB`
-      },
-    },
-    {
-      title: '操作',
-      key: 'actions',
-      render: (_: any, record: any) => (
-        <Space>
-          {record.type.startsWith('image/') ? (
-            <Button type="link" size="small" onClick={() => handleImagePreview(record.url)}>
-              预览
-            </Button>
-          ) : null}
-          <Button type="link" size="small" onClick={() => handleDownload('pdf', record.id)}>
-            下载
-          </Button>
-        </Space>
-      ),
-    },
-  ]
-
-  if (isLoading) {
-    return (
-      <div className="page-container">
-        <div className="flex justify-center items-center h-64">
-          <div className="text-center">
-            <Spin size="large" />
-            <div className="mt-4">
-              <Text>加载中...</Text>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (error || !pqr) {
-    return (
-      <div className="page-container">
-        <Alert
-          message="加载失败"
-          description="无法加载PQR详情，请稍后重试"
-          type="error"
-          showIcon
-        />
-      </div>
-    )
-  }
-
-  const statusConfig = getStatusConfig(pqr.status)
+  const statusConfig = getStatusConfig(pqrData.status)
 
   return (
     <div className="page-container">
-      <div className="page-header">
-        <Space className="w-full justify-between">
+      {/* 页面头部 */}
+      <div className="page-header" style={{ marginBottom: 24 }}>
+        <Space size="large" style={{ width: '100%', justifyContent: 'space-between' }}>
           <Space>
             <Button
               icon={<ArrowLeftOutlined />}
@@ -356,9 +323,17 @@ const PQRDetail: React.FC = () => {
             >
               返回列表
             </Button>
-            <Title level={2} className="mb-0">
-              {pqr.pqr_number} - {pqr.title}
-            </Title>
+            <Divider type="vertical" />
+            <Space direction="vertical" size={0}>
+              <Title level={3} style={{ margin: 0 }}>
+                {pqrData.title}
+              </Title>
+              <Space size="small">
+                <Text type="secondary">PQR编号: {pqrData.pqr_number}</Text>
+                <Divider type="vertical" />
+                <Text type="secondary">版本: {pqrData.revision || 'A'}</Text>
+              </Space>
+            </Space>
           </Space>
           <Space>
             <Tag color={statusConfig.color} icon={statusConfig.icon}>
@@ -368,168 +343,174 @@ const PQRDetail: React.FC = () => {
         </Space>
       </div>
 
-      <Row gutter={[16, 16]}>
-        {/* 基本信息 */}
-        <Col xs={24} lg={12}>
-          <Card title="基本信息" className="h-full">
-            <Descriptions column={1} size="small">
-              <Descriptions.Item label="PQR编号">{pqr.pqr_number}</Descriptions.Item>
-              <Descriptions.Item label="标题">{pqr.title}</Descriptions.Item>
-              <Descriptions.Item label="测试日期">
-                {dayjs(pqr.test_date).format('YYYY年MM月DD日')}
-              </Descriptions.Item>
-              <Descriptions.Item label="测试机构">{pqr.test_organization}</Descriptions.Item>
-              <Descriptions.Item label="创建时间">
-                {dayjs(pqr.created_at).format('YYYY-MM-DD HH:mm')}
-              </Descriptions.Item>
-              {pqr.wps_info && (
-                <Descriptions.Item label="关联WPS">
-                  <Button type="link" size="small" onClick={() => navigate(`/wps/${pqr.wps_info.id}`)}>
-                    {pqr.wps_info.wps_number} - {pqr.wps_info.title}
-                  </Button>
-                </Descriptions.Item>
-              )}
-            </Descriptions>
-          </Card>
-        </Col>
-
-        {/* 焊接工艺参数 */}
-        <Col xs={24} lg={12}>
-          <Card title="焊接工艺参数" className="h-full">
-            <Descriptions column={1} size="small">
-              <Descriptions.Item label="母材">{pqr.base_material}</Descriptions.Item>
-              <Descriptions.Item label="母材厚度">{pqr.base_material_thickness} mm</Descriptions.Item>
-              <Descriptions.Item label="焊材">{pqr.filler_material}</Descriptions.Item>
-              <Descriptions.Item label="焊材直径">{pqr.filler_material_diameter} mm</Descriptions.Item>
-              <Descriptions.Item label="焊接方法">{pqr.welding_process}</Descriptions.Item>
-              <Descriptions.Item label="接头类型">{pqr.joint_type}</Descriptions.Item>
-              <Descriptions.Item label="焊接位置">{pqr.welding_position}</Descriptions.Item>
-            </Descriptions>
-          </Card>
-        </Col>
-
-        {/* 测试结果 */}
-        <Col xs={24} lg={12}>
-          <Card title="机械性能测试结果" className="h-full">
-            <Descriptions column={1} size="small">
-              <Descriptions.Item label="抗拉强度">{pqr.tensile_strength} MPa</Descriptions.Item>
-              <Descriptions.Item label="屈服强度">{pqr.yield_strength} MPa</Descriptions.Item>
-              <Descriptions.Item label="延伸率">{pqr.elongation}%</Descriptions.Item>
-              <Descriptions.Item label="冲击能量">{pqr.impact_energy} J</Descriptions.Item>
-            </Descriptions>
-
-            <Divider />
-
-            <div>
-              <Text strong>弯曲试验结果：</Text>
-              <br />
-              <Text className="text-gray-600">{pqr.bend_test_result}</Text>
-            </div>
-
-            <Divider />
-
-            <div>
-              <Text strong>宏观检查结果：</Text>
-              <br />
-              <Text className="text-gray-600">{pqr.macro_examination}</Text>
-            </div>
-          </Card>
-        </Col>
-
-        {/* 操作按钮 */}
-        <Col xs={24} lg={12}>
-          <Card title="操作" className="h-full">
-            <Space direction="vertical" className="w-full">
-              <Space className="w-full">
-                <Button type="primary" icon={<EditOutlined />} onClick={() => navigate(`/pqr/${id}/edit`)}>
-                  编辑
-                </Button>
-                <Button icon={<DownloadOutlined />} onClick={() => handleDownload('pdf')}>
-                  下载PDF
-                </Button>
-                <Button icon={<DownloadOutlined />} onClick={() => handleDownload('excel')}>
-                  下载Excel
-                </Button>
-                <Button icon={<PrinterOutlined />} onClick={handlePrint}>
-                  打印
-                </Button>
-                <Button icon={<ShareAltOutlined />} onClick={handleShare}>
-                  分享
-                </Button>
-              </Space>
-
-              {pqr.status === 'pending' && checkPermission('pqr.approve') && (
-                <Alert
-                  message="待处理状态"
-                  description="此PQR正在等待审核批准"
-                  type="warning"
-                  showIcon
-                />
-              )}
-
-              {pqr.status === 'failed' && (
-                <Alert
-                  message="不合格状态"
-                  description="此PQR测试结果未达到标准要求"
-                  type="error"
-                  showIcon
-                />
-              )}
-            </Space>
-          </Card>
-        </Col>
-
-        {/* 详细信息标签页 */}
-        <Col xs={24}>
-          <Card>
-            <Tabs defaultActiveKey="results">
-              <TabPane tab="测试结果详情" key="results">
-                <Table
-                  columns={testResultColumns}
-                  dataSource={pqr.test_results}
-                  rowKey="test_type"
-                  pagination={false}
-                  size="small"
-                />
-              </TabPane>
-
-              <TabPane tab="附件文件" key="attachments">
-                <Table
-                  columns={attachmentColumns}
-                  dataSource={pqr.attachments}
-                  rowKey="id"
-                  pagination={false}
-                  size="small"
-                />
-              </TabPane>
-
-              <TabPane tab="备注信息" key="notes">
-                {pqr.notes ? (
-                  <div className="p-4 bg-gray-50 rounded">
-                    <pre className="whitespace-pre-wrap">{pqr.notes}</pre>
-                  </div>
-                ) : (
-                  <div className="text-center text-gray-400 py-8">
-                    暂无备注信息
-                  </div>
-                )}
-              </TabPane>
-            </Tabs>
-          </Card>
-        </Col>
-      </Row>
-
-      {/* 图片预览模态框 */}
-      <Modal
-        visible={previewVisible}
-        title="图片预览"
-        footer={null}
-        onCancel={() => setPreviewVisible(false)}
-        width="80%"
-        style={{ top: 20 }}
+      {/* 基本信息卡片 */}
+      <Card
+        title={
+          <Space>
+            <FileTextOutlined />
+            <Text strong>基本信息</Text>
+          </Space>
+        }
+        style={{ marginBottom: 16 }}
       >
-        <Image src={previewImage} alt="预览图片" />
-      </Modal>
+        <Descriptions bordered column={2} size="small">
+          <Descriptions.Item label="PQR编号">
+            <Text strong>{pqrData.pqr_number}</Text>
+          </Descriptions.Item>
+          <Descriptions.Item label="标题">
+            {pqrData.title}
+          </Descriptions.Item>
+          <Descriptions.Item label="状态">
+            <Badge
+              status={statusConfig.color === 'success' ? 'success' : statusConfig.color === 'error' ? 'error' : 'processing'}
+              text={statusConfig.text}
+            />
+          </Descriptions.Item>
+          <Descriptions.Item label="版本">
+            <Tag>{pqrData.revision || 'A'}</Tag>
+          </Descriptions.Item>
+          <Descriptions.Item label="试验日期">
+            {pqrData.test_date ? dayjs(pqrData.test_date).format('YYYY-MM-DD') : '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label="试验机构">
+            {pqrData.test_organization || '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label="评定结果">
+            {pqrData.qualification_result || '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label="创建时间">
+            {dayjs(pqrData.created_at).format('YYYY-MM-DD HH:mm:ss')}
+          </Descriptions.Item>
+          <Descriptions.Item label="更新时间">
+            {dayjs(pqrData.updated_at).format('YYYY-MM-DD HH:mm:ss')}
+          </Descriptions.Item>
+        </Descriptions>
+      </Card>
+
+      {/* 模块数据卡片 */}
+      {pqrData.modules_data && Object.keys(pqrData.modules_data).length > 0 && (
+        <Card
+          title={
+            <Space>
+              <SettingOutlined />
+              <Text strong>模块数据详情</Text>
+              <Tag color="blue">{Object.keys(pqrData.modules_data).length} 个模块</Tag>
+            </Space>
+          }
+          style={{ marginBottom: 16 }}
+        >
+          <Tabs
+            items={Object.entries(pqrData.modules_data).map(([instanceId, moduleContent]: [string, any]) => {
+              // 获取模块定义
+              const moduleId = moduleContent.moduleId
+              const presetModule = getPQRModuleById(moduleId)
+              const customModule = customModulesCache[moduleId]
+              const module = presetModule || customModule
+
+              // 模块名称和分类
+              const moduleName = moduleContent.customName || module?.name || moduleId
+              const moduleCategory = module?.category || 'basic'
+
+              return {
+                key: instanceId,
+                label: (
+                  <Space>
+                    {getCategoryIcon(moduleCategory)}
+                    <Text>{moduleName}</Text>
+                    {module && (
+                      <Tag color="blue" style={{ fontSize: 11 }}>
+                        {getCategoryName(moduleCategory)}
+                      </Tag>
+                    )}
+                  </Space>
+                ),
+                children: (
+                  <Card size="small" styles={{ body: { padding: '16px' } }}>
+                    {moduleContent.data && Object.keys(moduleContent.data).length > 0 ? (
+                      <Row gutter={[16, 16]}>
+                        {Object.entries(moduleContent.data).map(([fieldKey, value]: [string, any]) => {
+                          // 获取字段定义
+                          const fieldDef = module?.fields?.[fieldKey]
+                          const fieldLabel = fieldDef?.label || fieldKey
+
+                          return (
+                            <Col key={fieldKey} xs={24} sm={12} md={8}>
+                              <div style={{ marginBottom: 8 }}>
+                                <Text strong style={{ fontSize: 13 }}>
+                                  {fieldLabel}
+                                  {fieldDef?.required && <Text type="danger"> *</Text>}
+                                  {fieldDef?.unit && (
+                                    <Text type="secondary" style={{ fontSize: 11, marginLeft: 4 }}>
+                                      ({fieldDef.unit})
+                                    </Text>
+                                  )}
+                                </Text>
+                              </div>
+                              <div>
+                                {renderFieldValue(fieldKey, value, fieldDef)}
+                              </div>
+                            </Col>
+                          )
+                        })}
+                      </Row>
+                    ) : (
+                      <Empty description="该模块暂无数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                    )}
+                  </Card>
+                ),
+              }
+            })}
+          />
+        </Card>
+      )}
+
+      {/* 审批历史 */}
+      {pqrData.approval_instance_id && (
+        <Card
+          title={
+            <Space>
+              <HistoryOutlined />
+              <Text strong>审批历史</Text>
+            </Space>
+          }
+          style={{ marginBottom: 16 }}
+        >
+          <ApprovalHistory instanceId={pqrData.approval_instance_id} />
+        </Card>
+      )}
+
+      {/* 操作按钮 */}
+      <Card>
+        <Space size="middle">
+          <Button type="primary" icon={<EditOutlined />} onClick={handleEdit} size="large">
+            编辑 PQR
+          </Button>
+          <Button icon={<CopyOutlined />} onClick={handleCopy} size="large">
+            复制 PQR
+          </Button>
+          <Button icon={<DownloadOutlined />} size="large">
+            下载 PDF
+          </Button>
+
+          {/* 审批按钮 */}
+          <ApprovalButton
+            documentType="pqr"
+            documentId={parseInt(id || '0')}
+            documentNumber={pqrData.pqr_number}
+            documentTitle={pqrData.title}
+            instanceId={pqrData.approval_instance_id}
+            status={pqrData.approval_status || pqrData.status}
+            canSubmit={!pqrData.approval_instance_id}
+            canApprove={false}
+            canCancel={false}
+            onSuccess={() => {
+              // 刷新PQR数据
+              window.location.reload()
+            }}
+            size="large"
+          />
+        </Space>
+      </Card>
     </div>
   )
 }

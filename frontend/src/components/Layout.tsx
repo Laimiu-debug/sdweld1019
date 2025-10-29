@@ -47,10 +47,14 @@ import {
   GiftOutlined,
   SafetyOutlined,
   SwitcherOutlined,
+  ShareAltOutlined,
+  CloudOutlined,
 } from '@ant-design/icons'
 import { useAuthStore } from '@/store/authStore'
 import { workspaceService, Workspace } from '@/services/workspace'
 import WorkspaceSwitcher from '@/components/WorkspaceSwitcher'
+import NotificationCenter from '@/components/NotificationCenter'
+import Footer from '@/components/Footer'
 
 const { Header, Sider, Content } = AntLayout
 const { Text } = Typography
@@ -83,22 +87,51 @@ const Layout: React.FC<LayoutProps> = () => {
     return ['enterprise', 'enterprise_pro', 'enterprise_pro_max'].includes(userTier)
   }
 
-  // 获取会员信息
+  // 刷新用户信息和会员信息
   useEffect(() => {
-    const fetchMembershipInfo = async () => {
+    const refreshData = async () => {
       if (!user || isGuestMode) return
 
       try {
+        // 保存当前的会员等级
+        const oldTier = user?.member_tier || user?.membership_tier || 'free'
+
+        // 刷新用户信息以获取最新的会员等级
+        // 这样可以确保在支付升级后,前端能获取到最新的会员信息
+        const refreshed = await refreshUserInfo()
+
+        if (refreshed) {
+          // 获取刷新后的用户信息
+          const { user: newUser } = useAuthStore.getState()
+          const newTier = newUser?.member_tier || newUser?.membership_tier || 'free'
+
+          // 如果会员等级发生变化,刷新页面以更新菜单
+          if (oldTier !== newTier) {
+            console.log(`[Layout] 检测到会员等级变化: ${oldTier} -> ${newTier}, 刷新页面...`)
+            message.success(`会员等级已更新, 页面即将刷新...`)
+            setTimeout(() => {
+              window.location.reload()
+            }, 1500)
+            return
+          }
+        }
+
+        // 获取会员信息
         const { membershipService } = await import('@/services/membership')
         const info = await membershipService.getUserMembershipInfo()
         setMembershipInfo(info)
       } catch (error) {
-        console.error('Failed to fetch membership info:', error)
+        console.error('Failed to refresh user data:', error)
       }
     }
 
-    fetchMembershipInfo()
-  }, [user, isGuestMode])
+    refreshData()
+
+    // 每30秒检查一次会员等级是否变化
+    const interval = setInterval(refreshData, 30000)
+
+    return () => clearInterval(interval)
+  }, [isGuestMode]) // 只在组件挂载时执行一次
 
   useEffect(() => {
     const handleResize = () => {
@@ -196,6 +229,26 @@ const Layout: React.FC<LayoutProps> = () => {
       key: '/dashboard',
       icon: <DashboardOutlined />,
       label: '仪表盘',
+    },
+    {
+      key: 'resource-library-group',
+      icon: <DatabaseOutlined />,
+      label: '资源库',
+      children: [
+        {
+          key: '/modules',
+          label: '模块管理',
+        },
+        {
+          key: '/templates',
+          label: '模板管理',
+        },
+        {
+          key: '/shared-library',
+          label: '共享库',
+        },
+      ],
+      hidden: false, // 所有用户都可以访问资源库
     },
     {
       key: 'wps-group',
@@ -364,6 +417,11 @@ const Layout: React.FC<LayoutProps> = () => {
         {
           key: '/enterprise/roles',
           label: '角色设置',
+          hidden: !checkPermission('enterprise.roles'),
+        },
+        {
+          key: '/enterprise/approval-workflows',
+          label: '审批流程',
           hidden: !checkPermission('enterprise.roles'),
         },
         {
@@ -641,7 +699,7 @@ const Layout: React.FC<LayoutProps> = () => {
           placement="left"
           onClose={() => setMobileDrawerVisible(false)}
           open={mobileDrawerVisible}
-          bodyStyle={{ padding: 0 }}
+          styles={{ body: { padding: 0 } }}
           width={256}
         >
           {sidebarContent}
@@ -775,19 +833,14 @@ const Layout: React.FC<LayoutProps> = () => {
             )}
 
             {/* 通知中心 */}
-            <div className="notification-center" style={{
-              flexShrink: 0,
-              marginRight: '4px'
-            }}>
-              <Badge count={3} size="small">
-                <Button
-                  type="text"
-                  icon={<BellOutlined />}
-                  className="header-btn notification-btn"
-                  style={{ width: '32px', height: '32px' }}
-                />
-              </Badge>
-            </div>
+            {!isGuestMode && (
+              <div className="notification-center" style={{
+                flexShrink: 0,
+                marginRight: '4px'
+              }}>
+                <NotificationCenter />
+              </div>
+            )}
 
             {/* 用户信息 */}
             <div className="user-profile" style={{
@@ -851,11 +904,14 @@ const Layout: React.FC<LayoutProps> = () => {
             borderRadius: borderRadiusLG,
             margin: '24px',
             padding: '24px',
-            minHeight: 'calc(100vh - 112px)',
+            minHeight: 'calc(100vh - 200px)',
           }}
         >
           <Outlet />
         </Content>
+
+        {/* Footer */}
+        <Footer />
       </AntLayout>
     </AntLayout>
   )

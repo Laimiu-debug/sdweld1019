@@ -1046,8 +1046,8 @@ body {
 
 .wps-list-container .page-header {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  justify-content: center;
+  align-items: center;
   margin-bottom: 24px;
 }
 

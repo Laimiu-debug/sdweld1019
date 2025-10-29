@@ -57,7 +57,7 @@ class Settings(BaseSettings):
         "http://127.0.0.1:4002"
     ]
     ALLOWED_CREDENTIALS: bool = True
-    ALLOWED_METHODS: List[str] = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    ALLOWED_METHODS: List[str] = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
     ALLOWED_HEADERS: List[str] = ["*"]
 
     # 文件存储配置
@@ -68,14 +68,42 @@ class Settings(BaseSettings):
     ]
 
     # 邮件配置
+    EMAIL_PROVIDER: str = "smtp"  # smtp, sendgrid, aliyun
     SMTP_TLS_PORT: int = 587
     SMTP_SERVER: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
     SMTP_USER: str = "your-email@gmail.com"
     SMTP_PASSWORD: str = "your-app-password"
     EMAILS_FROM_EMAIL: str = "noreply@yourdomain.com"
-    EMAILS_FROM_NAME: str = "Welding System"
+    EMAILS_FROM_NAME: str = "焊接工艺管理系统"
     EMAIL_RESET_TOKEN_EXPIRE_HOURS: int = 4
+
+    # SendGrid配置（可选）
+    SENDGRID_API_KEY: Optional[str] = None
+
+    # 阿里云配置（邮件和短信共用）
+    ALIYUN_ACCESS_KEY_ID: Optional[str] = None
+    ALIYUN_ACCESS_KEY_SECRET: Optional[str] = None
+    ALIYUN_REGION_ID: str = "cn-hangzhou"
+
+    # 短信配置
+    SMS_PROVIDER: str = "aliyun"  # aliyun, tencent, yunpian
+
+    # 阿里云短信配置
+    ALIYUN_SMS_SIGN_NAME: str = "焊接工艺管理系统"
+    SMS_TEMPLATE_LOGIN: str = "SMS_LOGIN"  # 登录验证码模板ID
+    SMS_TEMPLATE_REGISTER: str = "SMS_REGISTER"  # 注册验证码模板ID
+    SMS_TEMPLATE_RESET_PASSWORD: str = "SMS_RESET_PASSWORD"  # 重置密码验证码模板ID
+
+    # 腾讯云短信配置（可选）
+    TENCENT_SECRET_ID: Optional[str] = None
+    TENCENT_SECRET_KEY: Optional[str] = None
+    TENCENT_SMS_APP_ID: Optional[str] = None
+    TENCENT_SMS_SIGN_NAME: str = "焊接工艺管理系统"
+    TENCENT_SMS_REGION: str = "ap-guangzhou"
+
+    # 云片短信配置（可选）
+    YUNPIAN_API_KEY: Optional[str] = None
 
     # Celery配置
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
@@ -99,6 +127,21 @@ class Settings(BaseSettings):
     # 系统配置
     TIMEZONE: str = "Asia/Shanghai"
     LOCALE: str = "zh_CN"
+
+    # 支付配置
+    PAYMENT_PROVIDER: str = "mock"  # mock, xunhu, pingpp
+
+    # 虎皮椒支付配置（个人开发者推荐）
+    XUNHU_APPID: Optional[str] = None
+    XUNHU_APPSECRET: Optional[str] = None
+
+    # Ping++支付配置（企业用户）
+    PAYMENT_APP_ID: Optional[str] = None
+    PAYMENT_API_KEY: Optional[str] = None
+
+    # 支付回调配置
+    PAYMENT_NOTIFY_URL: Optional[str] = "http://localhost:8000/api/v1/payments/callback"
+    PAYMENT_RETURN_URL: Optional[str] = "http://localhost:3000/membership/payment-result"
 
     # 会员等级配置
     MEMBER_TIERS: Dict[str, Dict[str, Any]] = {

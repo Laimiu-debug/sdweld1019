@@ -6,6 +6,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Mapped, relationship
 from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, ForeignKey
+from sqlalchemy.dialects.postgresql import JSONB
 
 from app.core.database import Base
 
@@ -27,11 +28,16 @@ class PQR(Base):
     is_shared = Column(Boolean, default=False, comment="是否在企业内共享")
     access_level = Column(String(20), default="private", comment="访问级别: private/factory/company/public")
 
+    # 审计字段
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False, comment="创建人ID")
+    updated_by = Column(Integer, ForeignKey("users.id"), nullable=True, comment="最后更新人ID")
+
     # 基本信息
     pqr_number = Column(String(50), unique=True, index=True, nullable=False, comment="PQR编号")
     title = Column(String(200), nullable=False, comment="标题")
     wps_number = Column(String(50), comment="对应的WPS编号")
-    test_date = Column(DateTime, nullable=False, comment="试验日期")
+    test_date = Column(DateTime, nullable=True, comment="试验日期")
+    status = Column(String(20), default="draft", index=True, comment="状态: draft/review/approved/rejected/archived")
 
     # 关联信息（保留owner_id用于向后兼容）
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=True, comment="所有者ID（已废弃，使用user_id）")
@@ -159,9 +165,13 @@ class PQR(Base):
     test_reports = Column(Text, comment="试验报告文件路径")
     attachments = Column(Text, comment="附件文件路径")
 
-    # ==================== 审计字段 ====================
-    created_by = Column(Integer, ForeignKey("users.id"), nullable=False, comment="创建人ID")
-    updated_by = Column(Integer, ForeignKey("users.id"), nullable=True, comment="更新人ID")
+    # ==================== 模块化数据 ====================
+    # 修改为外键 + SET NULL：当模板被删除时，已创建的PQR文档应该保持可编辑
+    # template_id 设为 NULL 表示模板已被删除，但文档数据仍然完整保存在 modules_data 中
+    template_id = Column(String(100), ForeignKey('wps_templates.id', ondelete='SET NULL'), nullable=True, index=True, comment="使用的模板ID（可为空，模板删除后自动设为NULL）")
+    modules_data = Column(JSONB, comment="模块化数据（JSONB格式）")
+
+    # ==================== 时间戳字段 ====================
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间")
     is_active = Column(Boolean, default=True, comment="是否启用")

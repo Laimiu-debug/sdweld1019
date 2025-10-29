@@ -177,12 +177,23 @@ const MembershipCurrent: React.FC = () => {
       try {
         setLoading(true)
 
+        // 先刷新用户信息,确保获取到最新的会员等级
+        // 这对于支付升级后的场景非常重要
+        try {
+          const { refreshUserInfo } = useAuthStore.getState()
+          await refreshUserInfo()
+          console.log('[会员中心] 用户信息已刷新')
+        } catch (error) {
+          console.error('[会员中心] 刷新用户信息失败:', error)
+        }
+
         // 分别获取数据，避免一个失败导致全部失败
         let membershipData = null
         let usageData = null
 
         try {
           membershipData = await membershipService.getUserMembershipInfo()
+          console.log('[会员中心] 会员信息:', membershipData)
         } catch (error) {
           console.error('Failed to fetch membership info:', error)
           // 如果获取失败，使用默认值

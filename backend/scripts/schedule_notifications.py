@@ -54,19 +54,52 @@ def check_expiring_subscriptions():
 
 
 def process_expired_subscriptions():
-    """处理已过期的订阅"""
-    logger.info("开始处理已过期的订阅...")
-    
+    """
+    处理已过期的订阅并自动切换会员等级
+
+    使用新的会员等级计算服务，支持多订单场景下的自动切换
+    """
+    logger.info("开始处理已过期的订阅并自动切换会员等级...")
+
     db = SessionLocal()
     try:
+        # 使用新的会员等级计算服务
+        from app.services.membership_tier_service import MembershipTierService
+        tier_service = MembershipTierService(db)
+
+        # 检查并切换过期订阅
+        results = tier_service.check_and_switch_expired_subscriptions()
+
+        # 统计处理结果
+        success_count = 0
+        error_count = 0
+        tier_changed_count = 0
+
+        for result in results:
+            if 'error' in result:
+                error_count += 1
+                logger.error(f"处理用户 {result['user_id']} 失败: {result['error']}")
+            else:
+                success_count += 1
+                if result.get('changed'):
+                    tier_changed_count += 1
+                    logger.info(
+                        f"用户 {result['user_id']} 会员等级已切换: "
+                        f"{result['old_tier']} -> {result['new_tier']}"
+                    )
+
+        logger.info(
+            f"处理完成: 成功 {success_count} 个, 失败 {error_count} 个, "
+            f"等级变更 {tier_changed_count} 个"
+        )
+
+        # 同时使用通知服务发送通知（已更新为使用新服务）
         notification_service = NotificationService(db)
-        
-        # 处理已过期的订阅
-        processed_count = notification_service.process_expired_subscriptions()
-        logger.info(f"处理了 {processed_count} 个已过期的订阅")
-        
+        notification_count = notification_service.process_expired_subscriptions()
+        logger.info(f"发送了 {notification_count} 条通知")
+
     except Exception as e:
-        logger.error(f"处理已过期的订阅失败: {str(e)}")
+        logger.error(f"处理已过期的订阅失败: {str(e)}", exc_info=True)
     finally:
         db.close()
 

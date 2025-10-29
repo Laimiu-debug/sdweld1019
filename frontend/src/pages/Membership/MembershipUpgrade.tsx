@@ -46,8 +46,10 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
+import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/store/authStore'
 import { membershipService, SubscriptionPlan, MembershipUpgradeRequest } from '@/services/membership'
+import ManualPaymentModal from '@/components/Payment/ManualPaymentModal'
 
 const { Title, Text, Paragraph } = Typography
 const { Option } = Select
@@ -201,6 +203,7 @@ interface UserMembership {
 }
 
 const MembershipUpgrade: React.FC = () => {
+  const navigate = useNavigate()
   const { user, refreshUserInfo } = useAuthStore()
   const [currentPlan, setCurrentPlan] = useState<string>('personal_free')
   const [selectedPlan, setSelectedPlan] = useState<string>('')
@@ -212,9 +215,24 @@ const MembershipUpgrade: React.FC = () => {
   const [paymentMethod, setPaymentMethod] = useState<string>('alipay')
   const [agreeTerms, setAgreeTerms] = useState(false)
   const [loading, setLoading] = useState(false)
+
+  // 手动支付相关状态
+  const [manualPaymentVisible, setManualPaymentVisible] = useState(false)
+  const [currentOrderId, setCurrentOrderId] = useState('')
+  const [currentAmount, setCurrentAmount] = useState(0)
+  const [currentPlanName, setCurrentPlanName] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const [plansLoading, setPlansLoading] = useState(true)
   const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlan[]>([])
+
+  // 价格预览相关状态
+  const [pricePreview, setPricePreview] = useState<{
+    original_price: number
+    actual_price: number
+    discount: number
+    is_upgrade: boolean
+  } | null>(null)
+  const [priceLoading, setPriceLoading] = useState(false)
 
   // 获取计划图标
   const getPlanIcon = (planId: string) => {
@@ -443,8 +461,65 @@ const MembershipUpgrade: React.FC = () => {
   ]
 
   // 将后端计划转换为前端格式
-  // 暂时强制使用 fallbackPlans，直到用户登录后API正常工作
-  const membershipPlans: MembershipPlan[] = fallbackPlans
+  // 优先使用从后端获取的订阅计划，如果没有则使用 fallbackPlans
+  const membershipPlans: MembershipPlan[] = subscriptionPlans.length > 0
+    ? subscriptionPlans.map(plan => ({
+        id: plan.id,
+        name: plan.name,
+        type: plan.id,
+        prices: {
+          monthly: plan.monthly_price,
+          quarterly: plan.quarterly_price,
+          yearly: plan.yearly_price
+        },
+        features: Array.isArray(plan.features) ? plan.features : [],
+        limitations: [],
+        icon: getIconForPlan(plan.id),
+        color: getColorForPlan(plan.id),
+        maxUsers: plan.max_employees || 1,
+        storage: getStorageForPlan(plan.id),
+        support: getSupportForPlan(plan.id),
+      }))
+    : fallbackPlans
+
+  // 辅助函数：根据计划ID获取图标
+  function getIconForPlan(planId: string) {
+    if (planId.includes('free')) return <UserOutlined />
+    if (planId.includes('basic')) return <FileTextOutlined />
+    if (planId.includes('pro') && !planId.includes('max')) return <RocketOutlined />
+    if (planId.includes('enterprise') && !planId.includes('max')) return <TeamOutlined />
+    if (planId.includes('max')) return <GiftOutlined />
+    return <StarOutlined />
+  }
+
+  // 辅助函数：根据计划ID获取颜色
+  function getColorForPlan(planId: string) {
+    if (planId.includes('free')) return '#52c41a'
+    if (planId.includes('basic')) return '#1890ff'
+    if (planId.includes('pro') && !planId.includes('max')) return '#722ed1'
+    if (planId.includes('enterprise') && !planId.includes('max')) return '#fa8c16'
+    if (planId.includes('max')) return '#eb2f96'
+    return '#1890ff'
+  }
+
+  // 辅助函数：根据计划ID获取存储说明
+  function getStorageForPlan(planId: string) {
+    if (planId.includes('free')) return '基础存储'
+    if (planId.includes('basic')) return '标准存储'
+    if (planId.includes('pro')) return '扩展存储'
+    if (planId.includes('enterprise')) return '定制存储'
+    return '标准存储'
+  }
+
+  // 辅助函数：根据计划ID获取支持说明
+  function getSupportForPlan(planId: string) {
+    if (planId.includes('free')) return '社区支持'
+    if (planId.includes('basic')) return '邮件支持'
+    if (planId.includes('pro')) return '优先支持'
+    if (planId.includes('enterprise')) return '专属支持'
+    if (planId.includes('max')) return '战略支持'
+    return '标准支持'
+  }
 
   // 刷新用户信息
   const handleRefreshUserInfo = async () => {
@@ -637,13 +712,55 @@ const MembershipUpgrade: React.FC = () => {
     setSelectedPlan(planId)
   }
 
+  // 获取价格预览
+  const fetchPricePreview = async (planId: string, cycle: 'monthly' | 'quarterly' | 'yearly') => {
+    setPriceLoading(true)
+    try {
+      const response = await fetch('/api/v1/payments/preview-price', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          plan_id: planId,
+          billing_cycle: cycle
+        })
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setPricePreview(data.data)
+      } else {
+        message.error('获取价格信息失败')
+        setPricePreview(null)
+      }
+    } catch (error) {
+      console.error('Failed to fetch price preview:', error)
+      setPricePreview(null)
+    } finally {
+      setPriceLoading(false)
+    }
+  }
+
   // 处理升级
   const handleUpgrade = (planId: string) => {
     setSelectedPlan(planId)
     setCurrentStep(0)
     setBillingCycle('monthly') // 重置为月付
+    setPricePreview(null) // 重置价格预览
     setUpgradeModalVisible(true)
+    // 获取价格预览
+    fetchPricePreview(planId, 'monthly')
   }
+
+  // 当计费周期改变时，重新获取价格预览
+  useEffect(() => {
+    if (selectedPlan && upgradeModalVisible) {
+      fetchPricePreview(selectedPlan, billingCycle)
+    }
+  }, [billingCycle])
 
   // 处理支付
   const handlePayment = async () => {
@@ -654,29 +771,41 @@ const MembershipUpgrade: React.FC = () => {
 
     setLoading(true)
     try {
-      const upgradeData: MembershipUpgradeRequest = {
-        plan_id: selectedPlan,
-        billing_cycle: billingCycle,
-        auto_renew: true,
-        payment_method: paymentMethod,
-      }
+      // 创建支付订单
+      const response = await fetch('/api/v1/payments/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          plan_id: selectedPlan,
+          billing_cycle: billingCycle,
+          payment_method: paymentMethod,
+          auto_renew: true
+        })
+      })
 
-      const result = await membershipService.upgradeMembership(upgradeData)
+      const data = await response.json()
 
-      if (result.success) {
-        message.success('升级成功！')
+      if (response.ok && data.success) {
+        // 关闭支付确认弹窗
         setPaymentModalVisible(false)
-        setUpgradeModalVisible(false)
-        setCurrentPlan(selectedPlan)
 
-        // 刷新用户信息
-        window.location.reload()
+        // 设置手动支付信息
+        const selectedPlanInfo = membershipPlans.find(p => p.id === selectedPlan)
+        setCurrentOrderId(data.data.transaction_id)  // 使用 transaction_id 而不是 order_id
+        setCurrentAmount(data.data.amount)
+        setCurrentPlanName(selectedPlanInfo?.name || selectedPlan)
+
+        // 显示手动支付弹窗
+        setManualPaymentVisible(true)
       } else {
-        message.error(result.message || '升级失败')
+        message.error(data.message || '创建订单失败')
       }
     } catch (error) {
-      console.error('Upgrade failed:', error)
-      message.error('升级失败，请稍后重试')
+      console.error('Payment failed:', error)
+      message.error('创建订单失败，请稍后重试')
     } finally {
       setLoading(false)
     }
@@ -981,6 +1110,36 @@ const MembershipUpgrade: React.FC = () => {
                       </Radio.Group>
                     </div>
 
+                    {/* 价格信息 */}
+                    {priceLoading ? (
+                      <div className="mt-3">
+                        <Spin size="small" /> <Text type="secondary">正在计算价格...</Text>
+                      </div>
+                    ) : pricePreview && pricePreview.is_upgrade && pricePreview.discount > 0 ? (
+                      <div className="mt-3">
+                        <Alert
+                          message={
+                            <div>
+                              <div>套餐原价：¥{pricePreview.original_price.toLocaleString()}</div>
+                              <div style={{ color: '#52c41a' }}>剩余价值抵扣：-¥{pricePreview.discount.toLocaleString()}</div>
+                              <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#1890ff' }}>
+                                实际支付：¥{pricePreview.actual_price.toLocaleString()}
+                              </div>
+                            </div>
+                          }
+                          type="success"
+                          showIcon
+                          icon={<GiftOutlined />}
+                        />
+                      </div>
+                    ) : pricePreview ? (
+                      <div className="mt-3">
+                        <Text strong style={{ fontSize: '18px', color: '#1890ff' }}>
+                          支付金额：¥{pricePreview.actual_price.toLocaleString()}
+                        </Text>
+                      </div>
+                    ) : null}
+
                     <div className="mt-2">
                       <Text type="secondary">
                         将在 {dayjs().add(billingCycle === 'monthly' ? 1 : billingCycle === 'quarterly' ? 3 : 12, 'month').format('YYYY-MM-DD')} 到期
@@ -1208,17 +1367,76 @@ const MembershipUpgrade: React.FC = () => {
             取消
           </Button>,
           <Button key="pay" type="primary" loading={loading} onClick={handlePayment}>
-            确认支付 ¥{membershipPlans.find(p => p.id === selectedPlan)?.prices[billingCycle].toLocaleString()}
+            确认支付 ¥{pricePreview ? pricePreview.actual_price.toLocaleString() : membershipPlans.find(p => p.id === selectedPlan)?.prices[billingCycle].toLocaleString()}
           </Button>,
         ]}
       >
-        <Alert
-          message="支付确认"
-          description={`请确认支付信息：\n套餐：${membershipPlans.find(p => p.id === selectedPlan)?.name}\n金额：¥${membershipPlans.find(p => p.id === selectedPlan)?.prices[billingCycle].toLocaleString()}/${billingCycle === 'monthly' ? '月' : billingCycle === 'quarterly' ? '季' : '年'}\n支付方式：${paymentMethod === 'alipay' ? '支付宝' : paymentMethod === 'wechat' ? '微信支付' : '银行转账'}`}
-          type="warning"
-          showIcon
-        />
+        {priceLoading ? (
+          <div className="text-center py-4">
+            <Spin />
+            <div className="mt-2">
+              <Text type="secondary">正在计算价格...</Text>
+            </div>
+          </div>
+        ) : pricePreview && pricePreview.is_upgrade && pricePreview.discount > 0 ? (
+          <div>
+            <Alert
+              message="升级补差价"
+              description={
+                <div>
+                  <div>套餐：{membershipPlans.find(p => p.id === selectedPlan)?.name}</div>
+                  <div>计费周期：{billingCycle === 'monthly' ? '月付' : billingCycle === 'quarterly' ? '季付' : '年付'}</div>
+                  <div>支付方式：{paymentMethod === 'alipay' ? '支付宝' : paymentMethod === 'wechat' ? '微信支付' : '银行转账'}</div>
+                  <div className="mt-2" style={{ borderTop: '1px dashed #d9d9d9', paddingTop: '8px' }}>
+                    <div>套餐原价：¥{pricePreview.original_price.toLocaleString()}</div>
+                    <div style={{ color: '#52c41a' }}>剩余价值抵扣：-¥{pricePreview.discount.toLocaleString()}</div>
+                    <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#1890ff', marginTop: '4px' }}>
+                      实际支付：¥{pricePreview.actual_price.toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+              }
+              type="info"
+              showIcon
+            />
+            <div className="mt-3">
+              <Text type="secondary" style={{ fontSize: '12px' }}>
+                💡 您当前套餐的剩余时间价值将自动抵扣新套餐费用
+              </Text>
+            </div>
+          </div>
+        ) : (
+          <Alert
+            message="支付确认"
+            description={
+              <div>
+                <div>套餐：{membershipPlans.find(p => p.id === selectedPlan)?.name}</div>
+                <div>金额：¥{pricePreview ? pricePreview.actual_price.toLocaleString() : membershipPlans.find(p => p.id === selectedPlan)?.prices[billingCycle].toLocaleString()}/{billingCycle === 'monthly' ? '月' : billingCycle === 'quarterly' ? '季' : '年'}</div>
+                <div>支付方式：{paymentMethod === 'alipay' ? '支付宝' : paymentMethod === 'wechat' ? '微信支付' : '银行转账'}</div>
+              </div>
+            }
+            type="warning"
+            showIcon
+          />
+        )}
       </Modal>
+
+      {/* 手动支付弹窗 */}
+      <ManualPaymentModal
+        visible={manualPaymentVisible}
+        orderId={currentOrderId}
+        amount={currentAmount}
+        planName={currentPlanName}
+        paymentMethod={paymentMethod as 'alipay' | 'wechat'}
+        onSuccess={() => {
+          setManualPaymentVisible(false)
+          setUpgradeModalVisible(false)
+          message.success('支付凭证已提交，请等待管理员确认')
+          // 跳转到订单页面
+          navigate('/membership/history')
+        }}
+        onCancel={() => setManualPaymentVisible(false)}
+      />
       </div>
     </>
   )

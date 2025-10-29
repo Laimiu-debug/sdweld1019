@@ -3,7 +3,7 @@ Admin management endpoints for the welding system backend.
 管理员专用API端点
 """
 from typing import Any, Dict, Optional
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
@@ -12,6 +12,7 @@ from app.api.admin_deps import get_current_active_admin
 from app.models.admin import Admin
 from app.core.database import get_db
 from app.services.admin_user_service import admin_user_service
+from app.api.v1.schemas.payment import ManualPaymentConfirmRequest
 
 router = APIRouter()
 
@@ -483,3 +484,210 @@ async def get_error_logs_admin(
         )
 
 
+# ==================== 支付管理端点 ====================
+
+@router.get("/payments/pending", response_model=Dict[str, Any])
+async def get_pending_payments_admin(
+    status_filter: str = Query('pending_confirm', description="状态筛选"),
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_active_admin)
+) -> Any:
+    """获取待确认支付列表（管理员专用）"""
+    from app.models.subscription import SubscriptionTransaction, Subscription, SubscriptionPlan
+    from app.models.user import User
+
+    # 查询订单
+    query = db.query(SubscriptionTransaction).join(
+        Subscription, SubscriptionTransaction.subscription_id == Subscription.id
+    ).join(
+        User, Subscription.user_id == User.id
+    ).join(
+        SubscriptionPlan, Subscription.plan_id == SubscriptionPlan.id
+    )
+
+    if status_filter != 'all':
+        query = query.filter(SubscriptionTransaction.status == status_filter)
+
+    transactions = query.order_by(
+        SubscriptionTransaction.created_at.desc()
+    ).all()
+
+    result = []
+    for t in transactions:
+        subscription = t.subscription
+        user = subscription.user
+        plan = db.query(SubscriptionPlan).filter(
+            SubscriptionPlan.id == subscription.plan_id
+        ).first()
+
+        # 从 description 中提取用户提交的交易号
+        user_transaction_id = ""
+        if t.description and "用户提交交易号:" in t.description:
+            user_transaction_id = t.description.split("用户提交交易号:")[1].strip()
+
+        result.append({
+            "order_id": t.transaction_id,
+            "user_id": user.id,
+            "user_name": user.username,
+            "user_email": user.email,
+            "plan_id": subscription.plan_id,
+            "plan_name": plan.name if plan else subscription.plan_id,
+            "amount": float(t.amount),
+            "payment_method": t.payment_method,
+            "transaction_id": user_transaction_id,
+            "status": t.status,
+            "created_at": t.created_at.isoformat(),
+            "updated_at": t.updated_at.isoformat(),
+        })
+
+    return {
+        "success": True,
+        "data": result
+    }
+
+
+@router.post("/payments/confirm", response_model=Dict[str, Any])
+async def confirm_manual_payment_admin(
+    request: ManualPaymentConfirmRequest,
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_active_admin)
+) -> Any:
+    """管理员确认手动支付"""
+    from app.models.subscription import SubscriptionTransaction, Subscription, SubscriptionPlan
+    from app.models.user import User
+    from dateutil.relativedelta import relativedelta
+
+    # 查找订单
+    transaction = db.query(SubscriptionTransaction).filter(
+        SubscriptionTransaction.transaction_id == request.order_id
+    ).first()
+
+    if not transaction:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="订单不存在"
+        )
+
+    if transaction.status != 'pending_confirm':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"订单状态不正确，当前状态: {transaction.status}"
+        )
+
+    # 更新订单状态
+    transaction.status = 'success'
+    transaction.transaction_date = datetime.utcnow()
+    transaction.updated_at = datetime.utcnow()
+
+    # 激活订阅
+    subscription = db.query(Subscription).filter(
+        Subscription.id == transaction.subscription_id
+    ).first()
+
+    if not subscription:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="订阅不存在"
+        )
+
+    # 获取套餐信息
+    plan = db.query(SubscriptionPlan).filter(
+        SubscriptionPlan.id == subscription.plan_id
+    ).first()
+
+    if not plan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="套餐不存在"
+        )
+
+    # 计算订阅时间
+    now = datetime.utcnow()
+
+    # 获取用户当前信息
+    user = db.query(User).filter(User.id == subscription.user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="用户不存在"
+        )
+
+    # 计算订阅结束时间
+    # 订阅开始时间总是从现在开始
+    start_date = now
+
+    # 根据计费周期计算结束时间
+    if subscription.billing_cycle == 'monthly':
+        end_date = start_date + relativedelta(months=1)
+    elif subscription.billing_cycle == 'quarterly':
+        end_date = start_date + relativedelta(months=3)
+    elif subscription.billing_cycle == 'yearly':
+        end_date = start_date + relativedelta(years=1)
+    else:
+        end_date = start_date + relativedelta(months=1)
+
+    # 更新订阅信息
+    subscription.status = 'active'
+    subscription.start_date = start_date
+    subscription.end_date = end_date
+    subscription.last_payment_date = now
+    subscription.updated_at = now
+
+    # 先提交订阅状态更新
+    db.commit()
+
+    # 使用会员等级计算服务更新用户会员信息
+    # 这样可以正确处理多订单场景（自动选择最高等级）
+    from app.services.membership_tier_service import MembershipTierService
+    tier_service = MembershipTierService(db)
+    tier_result = tier_service.update_user_tier(user.id)
+
+    print(f"[管理员确认支付] 用户 {user.id} 会员等级更新: {tier_result['old_tier']} -> {tier_result['new_tier']}")
+
+    # TODO: 发送邮件通知用户
+
+    return {
+        "success": True,
+        "message": "支付已确认，会员已开通",
+        "data": {
+            "user_id": user.id if user else None,
+            "member_tier": tier_result['new_tier'],
+            "old_tier": tier_result['old_tier'],
+            "subscription_end_date": end_date.isoformat(),
+            "has_next_subscription": tier_result['next_subscription'] is not None
+        }
+    }
+
+
+@router.post("/payments/reject", response_model=Dict[str, Any])
+async def reject_manual_payment_admin(
+    request: ManualPaymentConfirmRequest,
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_active_admin)
+) -> Any:
+    """管理员拒绝手动支付"""
+    from app.models.subscription import SubscriptionTransaction
+
+    # 查找订单
+    transaction = db.query(SubscriptionTransaction).filter(
+        SubscriptionTransaction.transaction_id == request.order_id
+    ).first()
+
+    if not transaction:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="订单不存在"
+        )
+
+    # 更新订单状态
+    transaction.status = 'rejected'
+    transaction.updated_at = datetime.utcnow()
+
+    db.commit()
+
+    # TODO: 发送邮件通知用户
+
+    return {
+        "success": True,
+        "message": "支付已拒绝"
+    }

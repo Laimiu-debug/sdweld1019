@@ -67,11 +67,11 @@ async def get_subscription_plans(
 @router.get("/current", response_model=Optional[SubscriptionSchema])
 async def get_current_subscription(
     db: Session = Depends(get_db),
-    current_user: dict = Depends(deps.get_current_user)
+    current_user = Depends(deps.get_current_user)
 ) -> Any:
     """获取当前用户的订阅信息."""
     subscription = db.query(Subscription).filter(
-        Subscription.user_id == current_user["id"],
+        Subscription.user_id == current_user.id,
         Subscription.status == "active",
         Subscription.end_date > datetime.utcnow()
     ).first()
@@ -86,17 +86,17 @@ async def get_current_subscription(
 async def upgrade_membership(
     upgrade_data: MembershipUpgradeRequest,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(deps.get_current_user)
+    current_user = Depends(deps.get_current_user)
 ) -> Any:
     """升级会员等级."""
     from app.services.payment_service import PaymentService
-    
+
     payment_service = PaymentService(db)
-    
+
     try:
         # 创建支付订单
         order_data = payment_service.create_payment_order(
-            user_id=current_user["id"],
+            user_id=current_user.id,
             plan_id=upgrade_data.plan_id,
             billing_cycle=upgrade_data.billing_cycle,
             payment_method=upgrade_data.payment_method
@@ -131,17 +131,39 @@ async def upgrade_membership(
 @router.get("/history")
 async def get_subscription_history(
     db: Session = Depends(get_db),
-    current_user: dict = Depends(deps.get_current_user)
+    current_user = Depends(deps.get_current_user)
 ) -> Any:
     """获取用户订阅历史."""
+    from app.models.subscription import SubscriptionTransaction
+
     try:
         subscriptions = db.query(Subscription).filter(
-            Subscription.user_id == current_user["id"]
+            Subscription.user_id == current_user.id
         ).order_by(Subscription.created_at.desc()).all()
 
         # 转换为API响应格式
         history_items = []
         for subscription in subscriptions:
+            # 获取该订阅的所有交易记录
+            transactions = db.query(SubscriptionTransaction).filter(
+                SubscriptionTransaction.subscription_id == subscription.id
+            ).order_by(SubscriptionTransaction.created_at.desc()).all()
+
+            # 格式化交易记录
+            transaction_list = []
+            for tx in transactions:
+                transaction_list.append({
+                    "id": tx.id,
+                    "transaction_id": tx.transaction_id,
+                    "amount": float(tx.amount) if tx.amount else 0,
+                    "currency": tx.currency or "CNY",
+                    "payment_method": tx.payment_method,
+                    "status": tx.status,
+                    "transaction_date": tx.transaction_date.isoformat() if tx.transaction_date else None,
+                    "description": tx.description,
+                    "created_at": tx.created_at.isoformat() if tx.created_at else None,
+                })
+
             history_items.append({
                 "id": subscription.id,
                 "plan_id": subscription.plan_id,
@@ -158,6 +180,7 @@ async def get_subscription_history(
                 "next_billing_date": subscription.next_billing_date.isoformat() if subscription.next_billing_date else None,
                 "created_at": subscription.created_at.isoformat() if subscription.created_at else None,
                 "updated_at": subscription.updated_at.isoformat() if subscription.updated_at else None,
+                "transactions": transaction_list,  # 添加交易记录列表
             })
 
         return {
@@ -177,12 +200,12 @@ async def get_subscription_history(
 async def cancel_subscription(
     subscription_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(deps.get_current_user)
+    current_user = Depends(deps.get_current_user)
 ) -> Any:
     """取消订阅."""
     subscription = db.query(Subscription).filter(
         Subscription.id == subscription_id,
-        Subscription.user_id == current_user["id"]
+        Subscription.user_id == current_user.id
     ).first()
 
     if not subscription:
@@ -209,12 +232,12 @@ async def cancel_subscription(
 async def renew_subscription(
     subscription_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(deps.get_current_user)
+    current_user = Depends(deps.get_current_user)
 ) -> Any:
     """续费订阅."""
     subscription = db.query(Subscription).filter(
         Subscription.id == subscription_id,
-        Subscription.user_id == current_user["id"]
+        Subscription.user_id == current_user.id
     ).first()
 
     if not subscription:
@@ -253,9 +276,10 @@ async def renew_subscription(
     subscription.next_billing_date = new_end_date - timedelta(days=7)
 
     # 创建交易记录
+    import uuid
     transaction = SubscriptionTransaction(
         subscription_id=subscription.id,
-        transaction_id=f"TXN{datetime.utcnow().strftime('%Y%m%d%H%M%S')}{current_user['id']}",
+        transaction_id=f"TXN{datetime.utcnow().strftime('%Y%m%d%H%M%S')}{uuid.uuid4().hex[:8].upper()}",
         amount=price,
         currency="CNY",
         payment_method=subscription.payment_method,
@@ -277,4 +301,89 @@ async def renew_subscription(
         "message": "续费成功",
         "new_end_date": new_end_date,
         "amount_paid": price
+    }
+
+
+@router.get("/subscription-summary")
+async def get_subscription_summary(
+    current_user: User = Depends(deps.get_current_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    获取用户订阅摘要信息
+
+    包括：
+    - 当前会员等级
+    - 当前生效的订阅
+    - 次高等级订阅（如果存在）
+    - 所有有效订阅列表
+    """
+    from app.services.membership_tier_service import MembershipTierService
+
+    tier_service = MembershipTierService(db)
+    summary = tier_service.get_user_subscription_summary(current_user.id)
+
+    return {
+        "success": True,
+        "data": summary
+    }
+
+
+@router.get("/subscription-history")
+async def get_subscription_history(
+    include_expired: bool = True,
+    current_user: User = Depends(deps.get_current_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    获取用户的所有订阅历史
+
+    参数：
+    - include_expired: 是否包含已过期的订阅（默认为True）
+
+    返回所有订阅记录，按创建时间降序排列
+    """
+    from app.services.membership_tier_service import MembershipTierService
+
+    tier_service = MembershipTierService(db)
+    subscriptions = tier_service.get_all_subscriptions_for_user(
+        current_user.id,
+        include_expired=include_expired
+    )
+
+    return {
+        "success": True,
+        "data": subscriptions,
+        "total": len(subscriptions)
+    }
+
+
+@router.post("/refresh-tier")
+async def refresh_membership_tier(
+    current_user: User = Depends(deps.get_current_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    手动刷新用户的会员等级
+
+    根据所有有效订阅重新计算并更新用户的会员等级
+    这个接口可以用于：
+    - 用户怀疑会员等级不正确时手动刷新
+    - 管理员操作后的同步
+    """
+    from app.services.membership_tier_service import MembershipTierService
+
+    tier_service = MembershipTierService(db)
+    result = tier_service.update_user_tier(current_user.id)
+
+    return {
+        "success": True,
+        "message": "会员等级已刷新",
+        "data": {
+            "old_tier": result['old_tier'],
+            "new_tier": result['new_tier'],
+            "changed": result['changed'],
+            "current_subscription": result['current_subscription'].plan_id if result['current_subscription'] else None,
+            "next_subscription": result['next_subscription'].plan_id if result['next_subscription'] else None
+        }
     }

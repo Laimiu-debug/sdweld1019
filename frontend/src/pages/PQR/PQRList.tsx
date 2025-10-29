@@ -1,24 +1,23 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import {
-  Table,
   Card,
   Button,
   Space,
   Typography,
   Input,
   Select,
-  DatePicker,
   Tag,
   Tooltip,
-  Modal,
   message,
   Row,
   Col,
   Popconfirm,
-  Badge,
   Statistic,
   Progress,
   Alert,
+  Divider,
+  Spin,
+  Empty,
 } from 'antd'
 import {
   PlusOutlined,
@@ -28,275 +27,404 @@ import {
   EyeOutlined,
   DownloadOutlined,
   ExclamationCircleOutlined,
-  FilterOutlined,
   ReloadOutlined,
   ExperimentOutlined,
+  CopyOutlined,
+  FilePdfOutlined,
+  FileExcelOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  ClockCircleOutlined,
+  SendOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
-import { PQRRecord, PQRStatus, PaginatedResponse } from '@/types'
 import { useAuthStore } from '@/store/authStore'
+import pqrService, { PQRSummary } from '@/services/pqr'
+import { ApprovalButton } from '@/components/Approval/ApprovalButton'
 
 const { Title, Text } = Typography
 const { Search } = Input
-const { RangePicker } = DatePicker
 const { Option } = Select
 
 const PQRList: React.FC = () => {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { checkPermission, canCreateMore, user } = useAuthStore()
-  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [searchText, setSearchText] = useState('')
-  const [statusFilter, setStatusFilter] = useState<PQRStatus | ''>('')
-  const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null)
+  const [statusFilter, setStatusFilter] = useState<string>('')
+  const [qualificationFilter, setQualificationFilter] = useState<string>('')
   const [pagination, setPagination] = useState({
     current: 1,
     pageSize: 20,
     total: 0,
   })
 
-  // 模拟API调用
-  const fetchPQRList = async ({
-    page = 1,
-    pageSize = 20,
-    search = '',
-    status = '',
-    dateRange = null,
-  }: {
-    page?: number
-    pageSize?: number
-    search?: string
-    status?: PQRStatus | ''
-    dateRange?: [dayjs.Dayjs, dayjs.Dayjs] | null
-  }) => {
-    // 模拟数据
-    const mockData: PQRRecord[] = [
-      {
-        id: '1',
-        pqr_number: 'PQR-2024-001',
-        title: '管道对接焊工艺评定',
-        status: 'qualified',
-        test_date: '2024-01-10',
-        test_organization: '第三方检测机构',
-        base_material: 'Q235',
-        filler_material: 'E7018',
-        welding_process: 'SMAW',
-        created_at: '2024-01-10T16:45:00Z',
-        updated_at: '2024-01-10T16:45:00Z',
-        user_id: 'user1',
-      },
-      {
-        id: '2',
-        pqr_number: 'PQR-2024-002',
-        title: '不锈钢角焊缝工艺评定',
-        status: 'pending',
-        test_date: '2024-01-12',
-        test_organization: '内部检测',
-        base_material: '304',
-        filler_material: 'ER308L',
-        welding_process: 'GTAW',
-        created_at: '2024-01-12T14:30:00Z',
-        updated_at: '2024-01-12T14:30:00Z',
-        user_id: 'user1',
-      },
-      {
-        id: '3',
-        pqr_number: 'PQR-2024-003',
-        title: '铝合金薄板对接焊工艺评定',
-        status: 'failed',
-        test_date: '2024-01-08',
-        test_organization: '第三方检测机构',
-        base_material: '5052',
-        filler_material: 'ER5356',
-        welding_process: 'GMAW',
-        created_at: '2024-01-08T11:20:00Z',
-        updated_at: '2024-01-08T11:20:00Z',
-        user_id: 'user1',
-      },
-    ]
-
-    // 模拟过滤
-    let filteredData = mockData
-    if (search) {
-      filteredData = filteredData.filter(item =>
-        item.pqr_number.toLowerCase().includes(search.toLowerCase()) ||
-        item.title.toLowerCase().includes(search.toLowerCase())
-      )
-    }
-    if (status) {
-      filteredData = filteredData.filter(item => item.status === status)
-    }
-    if (dateRange) {
-      filteredData = filteredData.filter(item => {
-        const itemDate = dayjs(item.test_date)
-        return itemDate.isAfter(dateRange[0]) && itemDate.isBefore(dateRange[1])
-      })
-    }
-
-    // 模拟分页
-    const total = filteredData.length
-    const startIndex = (page - 1) * pageSize
-    const endIndex = startIndex + pageSize
-    const items = filteredData.slice(startIndex, endIndex)
-
-    return {
-      success: true,
-      data: {
-        items,
-        total,
-        page,
-        page_size: pageSize,
-        total_pages: Math.ceil(total / pageSize),
-        has_next: page < Math.ceil(total / pageSize),
-        has_prev: page > 1,
-      },
-    }
-  }
-
-  // 使用React Query获取数据
+  // 使用真实API获取PQR列表
   const {
     data: pqrData,
     isLoading,
     refetch,
   } = useQuery({
-    queryKey: ['pqrList', pagination.current, pagination.pageSize, searchText, statusFilter, dateRange],
-    queryFn: () =>
-      fetchPQRList({
+    queryKey: ['pqrList', pagination.current, pagination.pageSize, searchText, statusFilter, qualificationFilter],
+    queryFn: async () => {
+      const result = await pqrService.list({
         page: pagination.current,
-        pageSize: pagination.pageSize,
-        search: searchText,
-        status: statusFilter,
-        dateRange,
-      }),
-    onSuccess: (data) => {
-      if (data.success && data.data) {
-        setPagination(prev => ({
-          ...prev,
-          total: data.data?.total || 0,
-        }))
-      }
+        page_size: pagination.pageSize,
+        keyword: searchText || undefined,
+        status: statusFilter || undefined,
+        qualification_result: qualificationFilter || undefined,
+      })
+      setPagination(prev => ({ ...prev, total: result.total }))
+      return result
     },
   })
 
-  // 表格列配置
-  const columns = [
-    {
-      title: 'PQR编号',
-      dataIndex: 'pqr_number',
-      key: 'pqr_number',
-      width: 150,
-      render: (text: string, record: PQRRecord) => (
-        <Button type="link" onClick={() => navigate(`/pqr/${record.id}`)}>
-          {text}
-        </Button>
-      ),
+  // 删除PQR
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => pqrService.delete(id),
+    onSuccess: () => {
+      message.success('删除成功')
+      queryClient.invalidateQueries({ queryKey: ['pqrList'] })
     },
-    {
-      title: '标题',
-      dataIndex: 'title',
-      key: 'title',
-      ellipsis: true,
+    onError: () => {
+      message.error('删除失败')
     },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 100,
-      render: (status: PQRStatus) => {
-        const statusConfig = {
-          pending: { color: 'processing', text: '待处理' },
-          qualified: { color: 'success', text: '合格' },
-          failed: { color: 'error', text: '不合格' },
+  })
+
+  // 复制PQR
+  const duplicateMutation = useMutation({
+    mutationFn: (id: number) => pqrService.duplicate(id),
+    onSuccess: () => {
+      message.success('复制成功')
+      queryClient.invalidateQueries({ queryKey: ['pqrList'] })
+    },
+    onError: (error: any) => {
+      console.error('复制PQR失败:', error)
+      const errorMsg = error?.response?.data?.detail || error?.message || '复制失败'
+      message.error(errorMsg)
+    },
+  })
+
+  // 导出PDF
+  const handleExportPDF = async (id: number, title: string) => {
+    try {
+      const blob = await pqrService.exportPDF(id)
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${title}.pdf`
+      a.click()
+      window.URL.revokeObjectURL(url)
+      message.success('导出PDF成功')
+    } catch (error) {
+      message.error('导出PDF失败')
+    }
+  }
+
+  // 导出Excel
+  const handleExportExcel = async (id: number, title: string) => {
+    try {
+      const blob = await pqrService.exportExcel(id)
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${title}.xlsx`
+      a.click()
+      window.URL.revokeObjectURL(url)
+      message.success('导出Excel成功')
+    } catch (error) {
+      message.error('导出Excel失败')
+    }
+  }
+
+  // 获取状态配置
+  const getStatusConfig = (status: string) => {
+    const statusConfig: Record<string, { color: string; text: string }> = {
+      draft: { color: 'default', text: '草稿' },
+      review: { color: 'processing', text: '审核中' },
+      approved: { color: 'success', text: '已批准' },
+      rejected: { color: 'error', text: '已拒绝' },
+      archived: { color: 'warning', text: '已归档' },
+    }
+    return statusConfig[status] || { color: 'default', text: status }
+  }
+
+  // 获取合格判定配置
+  const getQualificationConfig = (result: string) => {
+    if (!result) return null
+    const qualificationConfig: Record<string, { color: string; text: string }> = {
+      qualified: { color: 'success', text: '合格' },
+      failed: { color: 'error', text: '不合格' },
+      pending: { color: 'warning', text: '待定' },
+    }
+    return qualificationConfig[result] || { color: 'default', text: result }
+  }
+
+  // 渲染PQR卡片
+  const renderPQRCard = (record: PQRSummary) => {
+    const qualificationConfig = getQualificationConfig(record.qualification_result)
+
+    return (
+      <Card
+        key={record.id}
+        className="pqr-card"
+        hoverable
+        style={{ marginBottom: 16 }}
+        cover={
+          <div style={{ padding: '16px', backgroundColor: '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
+            <Row justify="space-between" align="middle">
+              <Col>
+                <Space direction="vertical" size={0}>
+                  <Text strong style={{ fontSize: 16 }}>
+                    {record.pqr_number}
+                  </Text>
+                  <Text type="secondary" ellipsis style={{ maxWidth: 300 }}>
+                    {record.title}
+                  </Text>
+                </Space>
+              </Col>
+              <Col>
+                <Space direction="vertical" size={4} align="end">
+                  <Space>
+                    <Tag color={getStatusConfig(record.status).color}>
+                      {getStatusConfig(record.status).text}
+                    </Tag>
+                    {qualificationConfig && (
+                      <Tag color={qualificationConfig.color}>
+                        {qualificationConfig.text}
+                      </Tag>
+                    )}
+                    {record.approval_status && (
+                      <Tag
+                        color={
+                          record.approval_status === 'approved'
+                            ? 'success'
+                            : record.approval_status === 'rejected'
+                            ? 'error'
+                            : record.approval_status === 'pending' || record.approval_status === 'in_progress'
+                            ? 'processing'
+                            : 'default'
+                        }
+                        icon={
+                          record.approval_status === 'approved' ? (
+                            <CheckCircleOutlined />
+                          ) : record.approval_status === 'rejected' ? (
+                            <CloseCircleOutlined />
+                          ) : record.approval_status === 'pending' || record.approval_status === 'in_progress' ? (
+                            <ClockCircleOutlined />
+                          ) : null
+                        }
+                      >
+                        {record.approval_status === 'approved'
+                          ? '已批准'
+                          : record.approval_status === 'rejected'
+                          ? '已拒绝'
+                          : record.approval_status === 'pending'
+                          ? '待审批'
+                          : record.approval_status === 'in_progress'
+                          ? '审批中'
+                          : record.approval_status}
+                      </Tag>
+                    )}
+                  </Space>
+                  {record.workflow_name && (
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      工作流: {record.workflow_name}
+                    </Text>
+                  )}
+                </Space>
+              </Col>
+            </Row>
+          </div>
         }
-        const config = statusConfig[status] || statusConfig.pending
-        return <Tag color={config.color}>{config.text}</Tag>
-      },
-    },
-    {
-      title: '测试日期',
-      dataIndex: 'test_date',
-      key: 'test_date',
-      width: 120,
-      render: (date: string) => date && dayjs(date).format('YYYY-MM-DD'),
-    },
-    {
-      title: '测试机构',
-      dataIndex: 'test_organization',
-      key: 'test_organization',
-      width: 150,
-      ellipsis: true,
-    },
-    {
-      title: '母材',
-      dataIndex: 'base_material',
-      key: 'base_material',
-      width: 100,
-    },
-    {
-      title: '焊接方法',
-      dataIndex: 'welding_process',
-      key: 'welding_process',
-      width: 120,
-    },
-    {
-      title: '创建时间',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      width: 120,
-      render: (date: string) => dayjs(date).format('YYYY-MM-DD'),
-    },
-    {
-      title: '操作',
-      key: 'actions',
-      width: 180,
-      render: (_, record: PQRRecord) => (
-        <Space>
-          <Tooltip title="查看">
-            <Button
-              type="text"
-              icon={<EyeOutlined />}
-              onClick={() => navigate(`/pqr/${record.id}`)}
-            />
-          </Tooltip>
-          {checkPermission('pqr.update') && (
-            <Tooltip title="编辑">
-              <Button
-                type="text"
-                icon={<EditOutlined />}
-                onClick={() => navigate(`/pqr/${record.id}/edit`)}
-              />
-            </Tooltip>
-          )}
-          <Tooltip title="下载">
-            <Button
-              type="text"
-              icon={<DownloadOutlined />}
-              onClick={() => handleDownload(record)}
-            />
-          </Tooltip>
-          {checkPermission('pqr.delete') && (
-            <Tooltip title="删除">
-              <Popconfirm
-                title="确定要删除这个PQR吗？"
-                description="删除后将无法恢复"
-                onConfirm={() => handleDelete(record.id)}
-                icon={<ExclamationCircleOutlined style={{ color: 'red' }} />}
-                okText="确定"
-                cancelText="取消"
-              >
-                <Button
-                  type="text"
-                  icon={<DeleteOutlined />}
-                  danger
-                />
-              </Popconfirm>
-            </Tooltip>
-          )}
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size="small">
+          <Row justify="space-between">
+            <Col>
+              <Text type="secondary">母材规格:</Text>
+              <Text style={{ marginLeft: 8 }}>{record.base_material_spec || '-'}</Text>
+            </Col>
+            <Col>
+              <Text type="secondary">试验日期:</Text>
+              <Text style={{ marginLeft: 8 }}>
+                {record.test_date ? dayjs(record.test_date).format('YYYY-MM-DD') : '-'}
+              </Text>
+            </Col>
+          </Row>
+          <Row justify="space-between">
+            <Col>
+              <Text type="secondary">焊接工艺:</Text>
+              <Text style={{ marginLeft: 8 }}>{record.welding_process || '-'}</Text>
+            </Col>
+            <Col>
+              <Text type="secondary">评定结果:</Text>
+              <Text style={{ marginLeft: 8 }}>
+                {record.qualification_result === 'qualified' && <Tag color="success">合格</Tag>}
+                {record.qualification_result === 'pending' && <Tag color="warning">待评定</Tag>}
+                {record.qualification_result === 'failed' && <Tag color="error">不合格</Tag>}
+                {!record.qualification_result && '-'}
+              </Text>
+            </Col>
+          </Row>
+          <Row justify="space-between">
+            <Col>
+              <Text type="secondary">关联WPS:</Text>
+              <Text style={{ marginLeft: 8 }}>{record.wps_number || '-'}</Text>
+            </Col>
+            <Col>
+              <Text type="secondary">创建时间:</Text>
+              <Text style={{ marginLeft: 8 }}>{dayjs(record.created_at).format('YYYY-MM-DD')}</Text>
+            </Col>
+          </Row>
         </Space>
-      ),
-    },
-  ]
+
+        <Divider style={{ margin: '12px 0' }} />
+
+        {/* 审批状态提示 */}
+        {record.approval_status === 'approved' && (
+          <Alert
+            message="已批准"
+            description="此PQR已通过审批，评定结果有效"
+            type="success"
+            showIcon
+            icon={<CheckCircleOutlined />}
+            style={{ marginBottom: 12 }}
+          />
+        )}
+
+        {record.approval_status === 'rejected' && (
+          <Alert
+            message="已拒绝"
+            description="此PQR审批被拒绝，需要修改后重新提交"
+            type="error"
+            showIcon
+            icon={<CloseCircleOutlined />}
+            style={{ marginBottom: 12 }}
+          />
+        )}
+
+        {(record.approval_status === 'pending' || record.approval_status === 'in_progress') && (
+          <Alert
+            message="审批中"
+            description="此PQR正在审批流程中，请等待审批完成"
+            type="warning"
+            showIcon
+            icon={<ClockCircleOutlined />}
+            style={{ marginBottom: 12 }}
+          />
+        )}
+
+        {!record.approval_status && record.status === 'draft' && (
+          <Alert
+            message="草稿状态"
+            description="此PQR处于草稿状态，可以提交审批"
+            type="info"
+            showIcon
+            icon={<ClockCircleOutlined />}
+            style={{ marginBottom: 12 }}
+          />
+        )}
+
+        {/* 操作按钮 */}
+        <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
+          <Space>
+            <Tooltip title="查看详情">
+              <Button
+                type="primary"
+                icon={<EyeOutlined />}
+                size="small"
+                onClick={() => navigate(`/pqr/${record.id}`)}
+              >
+                查看
+              </Button>
+            </Tooltip>
+
+            {checkPermission('pqr.update') && (
+              <Tooltip title="编辑">
+                <Button
+                  icon={<EditOutlined />}
+                  size="small"
+                  onClick={() => navigate(`/pqr/${record.id}/edit`)}
+                >
+                  编辑
+                </Button>
+              </Tooltip>
+            )}
+
+            <Tooltip title="复制">
+              <Button
+                icon={<CopyOutlined />}
+                size="small"
+                onClick={() => duplicateMutation.mutate(record.id)}
+              >
+                复制
+              </Button>
+            </Tooltip>
+
+            <Tooltip title="导出PDF">
+              <Button
+                icon={<FilePdfOutlined />}
+                size="small"
+                onClick={() => handleExportPDF(record.id, record.title)}
+              >
+                PDF
+              </Button>
+            </Tooltip>
+
+            <Tooltip title="导出Excel">
+              <Button
+                icon={<FileExcelOutlined />}
+                size="small"
+                onClick={() => handleExportExcel(record.id, record.title)}
+              >
+                Excel
+              </Button>
+            </Tooltip>
+
+            {/* 审批按钮 */}
+            <ApprovalButton
+              documentType="pqr"
+              documentId={parseInt(record.id)}
+              documentNumber={record.pqr_number}
+              documentTitle={record.title}
+              instanceId={record.approval_instance_id}
+              status={record.approval_status || record.status}
+              canSubmit={record.can_submit_approval}
+              canApprove={record.can_approve}
+              canCancel={record.submitter_id === user?.id}
+              onSuccess={refetch}
+              size="small"
+            />
+          </Space>
+
+          <Space>
+            {checkPermission('pqr.delete') && (
+              <Tooltip title="删除">
+                <Popconfirm
+                  title="确定要删除这条PQR记录吗？"
+                  description="删除后将无法恢复"
+                  onConfirm={() => deleteMutation.mutate(record.id)}
+                  icon={<ExclamationCircleOutlined style={{ color: 'red' }} />}
+                  okText="确定"
+                  cancelText="取消"
+                >
+                  <Button
+                    danger
+                    icon={<DeleteOutlined />}
+                    size="small"
+                  >
+                    删除
+                  </Button>
+                </Popconfirm>
+              </Tooltip>
+            )}
+          </Space>
+        </Space>
+      </Card>
+    )
+  }
 
   // 处理搜索
   const handleSearch = (value: string) => {
@@ -305,14 +433,14 @@ const PQRList: React.FC = () => {
   }
 
   // 处理状态筛选
-  const handleStatusFilter = (value: PQRStatus | '') => {
+  const handleStatusFilter = (value: string) => {
     setStatusFilter(value)
     setPagination(prev => ({ ...prev, current: 1 }))
   }
 
-  // 处理日期范围筛选
-  const handleDateRangeChange = (dates: [dayjs.Dayjs, dayjs.Dayjs] | null) => {
-    setDateRange(dates)
+  // 处理合格判定筛选
+  const handleQualificationFilter = (value: string) => {
+    setQualificationFilter(value)
     setPagination(prev => ({ ...prev, current: 1 }))
   }
 
@@ -321,27 +449,16 @@ const PQRList: React.FC = () => {
     setPagination(prev => ({ ...prev, current: page, pageSize }))
   }
 
-  // 处理行选择
-  const onSelectChange = (newSelectedRowKeys: React.Key[]) => {
-    setSelectedRowKeys(newSelectedRowKeys)
-  }
-
-  // 处理下载
-  const handleDownload = (record: PQRRecord) => {
-    message.info(`开始下载 ${record.pqr_number}`)
-    // 这里应该调用实际的下载API
-  }
-
-  // 计算PQR统计数据
-  const getPQRStats = (data: PQRRecord[] = []) => {
-    const stats = {
-      total: data.length,
-      qualified: data.filter(item => item.status === 'qualified').length,
-      pending: data.filter(item => item.status === 'pending').length,
-      failed: data.filter(item => item.status === 'failed').length,
-      thirdParty: data.filter(item => item.test_organization === '第三方检测机构').length,
+  // 计算统计数据
+  const getPQRStats = () => {
+    const items = pqrData?.items || []
+    return {
+      total: pqrData?.total || 0,
+      qualified: items.filter(item => item.qualification_result === 'qualified').length,
+      pending: items.filter(item => item.qualification_result === 'pending').length,
+      failed: items.filter(item => item.qualification_result === 'failed').length,
+      approved: items.filter(item => item.status === 'approved').length,
     }
-    return stats
   }
 
   // 获取PQR配额
@@ -358,39 +475,8 @@ const PQRList: React.FC = () => {
     return quotaMap[membershipTier] || 10
   }
 
-  // 处理删除
-  const handleDelete = async (id: string) => {
-    try {
-      // 这里应该调用实际的删除API
-      message.success('删除成功')
-      refetch()
-    } catch (error) {
-      message.error('删除失败')
-    }
-  }
-
-  // 处理批量操作
-  const handleBatchOperation = async (action: string) => {
-    if (selectedRowKeys.length === 0) {
-      message.warning('请选择要操作的记录')
-      return
-    }
-
-    try {
-      // 这里应该调用实际的批量操作API
-      message.success(`${action}成功`)
-      setSelectedRowKeys([])
-      refetch()
-    } catch (error) {
-      message.error(`${action}失败`)
-    }
-  }
-
-  // 行选择配置
-  const rowSelection = {
-    selectedRowKeys,
-    onChange: onSelectChange,
-  }
+  const stats = getPQRStats()
+  const tier = (user as any)?.member_tier || user?.membership_tier || 'personal_free'
 
   return (
     <div className="pqr-list-container">
@@ -404,77 +490,72 @@ const PQRList: React.FC = () => {
       </div>
 
       {/* 统计卡片 */}
-      {pqrData?.data?.items && (
-        <Row gutter={[16, 16]} className="stats-cards">
-          <Col xs={12} sm={8} md={6}>
-            <Card className="stat-card">
-              <Statistic
-                title="总计"
-                value={getPQRStats(pqrData.data.items).total}
-                prefix={<ExperimentOutlined />}
-                valueStyle={{ color: '#1890ff' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={8} md={6}>
-            <Card className="stat-card">
-              <Statistic
-                title="合格"
-                value={getPQRStats(pqrData.data.items).qualified}
-                prefix={<ExperimentOutlined />}
-                valueStyle={{ color: '#52c41a' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={8} md={6}>
-            <Card className="stat-card">
-              <Statistic
-                title="待处理"
-                value={getPQRStats(pqrData.data.items).pending}
-                prefix={<ExperimentOutlined />}
-                valueStyle={{ color: '#faad14' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={8} md={6}>
-            <Card className="stat-card">
-              <Statistic
-                title="第三方检测"
-                value={getPQRStats(pqrData.data.items).thirdParty}
-                prefix={<ExperimentOutlined />}
-                valueStyle={{ color: '#722ed1' }}
-              />
-            </Card>
-          </Col>
-        </Row>
-      )}
+      <Row gutter={[16, 16]} className="stats-cards" style={{ marginBottom: 16 }}>
+        <Col xs={12} sm={8} md={6}>
+          <Card className="stat-card">
+            <Statistic
+              title="总计"
+              value={stats.total}
+              prefix={<ExperimentOutlined />}
+              valueStyle={{ color: '#1890ff' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={8} md={6}>
+          <Card className="stat-card">
+            <Statistic
+              title="合格"
+              value={stats.qualified}
+              prefix={<ExperimentOutlined />}
+              valueStyle={{ color: '#52c41a' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={8} md={6}>
+          <Card className="stat-card">
+            <Statistic
+              title="待处理"
+              value={stats.pending}
+              prefix={<ExperimentOutlined />}
+              valueStyle={{ color: '#faad14' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={8} md={6}>
+          <Card className="stat-card">
+            <Statistic
+              title="已批准"
+              value={stats.approved}
+              prefix={<ExperimentOutlined />}
+              valueStyle={{ color: '#722ed1' }}
+            />
+          </Card>
+        </Col>
+      </Row>
 
       {/* 配额提醒 */}
-      {(() => {
-        const tier = (user as any)?.member_tier || user?.membership_tier || 'personal_free'
-        return tier !== 'enterprise_pro_max' && (
-          <Alert
-            message={`PQR配额使用情况: ${pqrData?.data?.total || 0}/${getPQRQuota(tier)}`}
-            description={
-              <Progress
-                percent={((pqrData?.data?.total || 0) / getPQRQuota(tier)) * 100}
-                status={
-                  ((pqrData?.data?.total || 0) / getPQRQuota(tier)) >= 0.8
-                    ? 'exception'
-                    : 'normal'
-                }
-              />
-            }
-            type="info"
-            showIcon
-            className="mb-4"
-          />
-        )
-      })()}
+      {tier !== 'enterprise_pro_max' && (
+        <Alert
+          message={`PQR配额使用情况: ${stats.total}/${getPQRQuota(tier)}`}
+          description={
+            <Progress
+              percent={(stats.total / getPQRQuota(tier)) * 100}
+              status={
+                (stats.total / getPQRQuota(tier)) >= 0.8
+                  ? 'exception'
+                  : 'normal'
+              }
+            />
+          }
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
+      )}
 
       <Card>
         {/* 搜索和筛选区域 */}
-        <Row gutter={[16, 16]} className="mb-4">
+        <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
           <Col xs={24} sm={12} md={8}>
             <Search
               placeholder="搜索PQR编号或标题"
@@ -492,27 +573,34 @@ const PQRList: React.FC = () => {
               style={{ width: '100%' }}
               onChange={handleStatusFilter}
             >
-              <Option value="pending">待处理</Option>
-              <Option value="qualified">合格</Option>
-              <Option value="failed">不合格</Option>
+              <Option value="draft">草稿</Option>
+              <Option value="review">审核中</Option>
+              <Option value="approved">已批准</Option>
+              <Option value="rejected">已拒绝</Option>
+              <Option value="archived">已归档</Option>
             </Select>
           </Col>
-          <Col xs={24} sm={12} md={6}>
-            <RangePicker
-              placeholder={['开始日期', '结束日期']}
+          <Col xs={24} sm={12} md={4}>
+            <Select
+              placeholder="合格判定"
+              allowClear
               size="large"
               style={{ width: '100%' }}
-              onChange={handleDateRangeChange}
-            />
+              onChange={handleQualificationFilter}
+            >
+              <Option value="qualified">合格</Option>
+              <Option value="failed">不合格</Option>
+              <Option value="pending">待定</Option>
+            </Select>
           </Col>
-          <Col xs={24} sm={12} md={6}>
+          <Col xs={24} sm={12} md={8}>
             <Space>
               <Button
                 type="primary"
                 icon={<PlusOutlined />}
                 size="large"
                 onClick={() => navigate('/pqr/create')}
-                disabled={!canCreateMore('pqr', pqrData?.data?.total || 0)}
+                disabled={!canCreateMore('pqr', stats.total)}
               >
                 创建PQR
               </Button>
@@ -527,51 +615,67 @@ const PQRList: React.FC = () => {
           </Col>
         </Row>
 
-        {/* 批量操作区域 */}
-        {selectedRowKeys.length > 0 && (
-          <Row className="mb-4">
-            <Col span={24}>
-              <Space>
-                <span>已选择 {selectedRowKeys.length} 项</span>
-                <Button onClick={() => handleBatchOperation('导出')}>
-                  批量导出
-                </Button>
-                {checkPermission('pqr.delete') && (
-                  <Popconfirm
-                    title="确定要删除选中的记录吗？"
-                    description="删除后将无法恢复"
-                    onConfirm={() => handleBatchOperation('删除')}
-                    icon={<ExclamationCircleOutlined style={{ color: 'red' }} />}
-                    okText="确定"
-                    cancelText="取消"
-                  >
-                    <Button danger>批量删除</Button>
-                  </Popconfirm>
-                )}
-              </Space>
-            </Col>
-          </Row>
-        )}
+        {/* 卡片列表区域 */}
+        <Spin spinning={isLoading}>
+          {pqrData?.items && pqrData.items.length > 0 ? (
+            <div className="pqr-cards-container">
+              {pqrData.items.map(record => renderPQRCard(record))}
 
-        {/* 表格区域 */}
-        <Table
-          columns={columns}
-          dataSource={pqrData?.data?.items}
-          rowKey="id"
-          pagination={{
-            current: pagination.current,
-            pageSize: pagination.pageSize,
-            total: pagination.total,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total, range) =>
-              `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
-            onChange: handleTableChange,
-          }}
-          loading={isLoading}
-          rowSelection={rowSelection}
-          scroll={{ x: 1200 }}
-        />
+              {/* 分页信息 */}
+              <Row justify="center" style={{ marginTop: 24 }}>
+                <Text type="secondary">
+                  第 {pagination.current} 页，共 {Math.ceil(pagination.total / pagination.pageSize)} 页
+                  （总计 {pagination.total} 条）
+                </Text>
+              </Row>
+
+              {/* 分页按钮 */}
+              <Row justify="center" gutter={[8, 8]} style={{ marginTop: 16 }}>
+                <Col>
+                  <Button
+                    disabled={pagination.current === 1}
+                    onClick={() => handleTableChange(pagination.current - 1, pagination.pageSize)}
+                  >
+                    上一页
+                  </Button>
+                </Col>
+                <Col>
+                  <Button
+                    disabled={pagination.current >= Math.ceil(pagination.total / pagination.pageSize)}
+                    onClick={() => handleTableChange(pagination.current + 1, pagination.pageSize)}
+                  >
+                    下一页
+                  </Button>
+                </Col>
+                <Col>
+                  <Select
+                    value={pagination.pageSize}
+                    onChange={(value) => handleTableChange(1, value)}
+                    style={{ width: 100 }}
+                  >
+                    <Option value={10}>10条/页</Option>
+                    <Option value={20}>20条/页</Option>
+                    <Option value={50}>50条/页</Option>
+                    <Option value={100}>100条/页</Option>
+                  </Select>
+                </Col>
+              </Row>
+            </div>
+          ) : (
+            <Empty
+              description="暂无PQR记录"
+              style={{ marginTop: 48, marginBottom: 48 }}
+            >
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => navigate('/pqr/create')}
+              >
+                创建第一个PQR
+              </Button>
+            </Empty>
+          )}
+        </Spin>
       </Card>
     </div>
   )

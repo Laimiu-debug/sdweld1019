@@ -13,7 +13,7 @@ class PQRBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=200, description="标题")
     pqr_number: str = Field(..., min_length=1, max_length=50, description="PQR编号")
     wps_number: Optional[str] = Field(None, max_length=50, description="对应的WPS编号")
-    test_date: datetime = Field(..., description="试验日期")
+    test_date: Optional[datetime] = Field(None, description="试验日期")
     company: Optional[str] = Field(None, max_length=100, description="公司名称")
     project_name: Optional[str] = Field(None, max_length=100, description="项目名称")
     test_location: Optional[str] = Field(None, max_length=100, description="试验地点")
@@ -136,9 +136,13 @@ class PQRBase(BaseModel):
 
 class PQRCreate(PQRBase):
     """PQR creation schema."""
-    qualification_result: str = Field(..., max_length=20, description="评定结果")
+    qualification_result: Optional[str] = Field(None, max_length=20, description="评定结果")
     qualification_date: Optional[datetime] = Field(None, description="评定日期")
     qualified_by: Optional[int] = Field(None, description="评定人ID")
+
+    # 模块化数据支持
+    template_id: Optional[str] = Field(None, description="模板ID")
+    modules_data: Optional[dict] = Field(None, description="模块化数据")
 
 
 class PQRUpdate(BaseModel):
@@ -271,17 +275,29 @@ class PQRUpdate(BaseModel):
     test_reports: Optional[str] = Field(None, description="试验报告文件路径")
     attachments: Optional[str] = Field(None, description="附件文件路径")
 
+    # 模块化数据支持
+    template_id: Optional[str] = Field(None, description="模板ID")
+    modules_data: Optional[dict] = Field(None, description="模块化数据")
+    status: Optional[str] = Field(None, description="状态")
+
 
 class PQRResponse(PQRBase):
     """PQR response schema."""
     id: int
     owner_id: int
-    qualification_result: str
+    qualification_result: Optional[str] = Field(default="pending", description="评定结果")
     qualification_date: Optional[datetime] = None
     qualified_by: Optional[int] = None
+    status: Optional[str] = Field(default="draft", description="状态")
+    template_id: Optional[str] = Field(None, description="模板ID")
+    modules_data: Optional[dict] = Field(None, description="模块化数据")
     created_at: datetime
     updated_at: datetime
     is_active: bool
+    # 审批相关字段
+    approval_instance_id: Optional[int] = None
+    approval_status: Optional[str] = None
+    workflow_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -292,15 +308,32 @@ class PQRSummary(BaseModel):
     title: str
     pqr_number: str
     wps_number: Optional[str] = None
-    test_date: datetime
+    test_date: Optional[datetime] = None
     company: Optional[str] = None
     welding_process: Optional[str] = None
     base_material_spec: Optional[str] = None
-    qualification_result: str
+    qualification_result: Optional[str] = None
+    status: Optional[str] = Field(default="draft", description="状态")
     created_at: datetime
     updated_at: datetime
+    # 审批相关字段
+    approval_instance_id: Optional[int] = None
+    approval_status: Optional[str] = None
+    workflow_name: Optional[str] = None
+    can_approve: Optional[bool] = None
+    can_submit_approval: Optional[bool] = None
+    submitter_id: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class PQRListResponse(BaseModel):
+    """PQR list response with pagination."""
+    items: List[PQRSummary] = Field(..., description="PQR列表")
+    total: int = Field(..., description="总记录数")
+    page: int = Field(..., description="当前页码")
+    page_size: int = Field(..., description="每页记录数")
+    total_pages: int = Field(..., description="总页数")
 
 
 # PQR试样信息 schemas

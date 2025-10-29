@@ -126,7 +126,7 @@ const QualityList: React.FC = () => {
       inspector_id: inspection.inspector_id,
       inspector_name: inspection.inspector_name,
       result: inspection.result,
-      is_qualified: inspection.is_qualified,
+      // is_qualified 由 result 自动计算，不需要手动设置
       defects_found: inspection.defects_found,
       corrective_actions: inspection.corrective_actions,
       rework_required: inspection.rework_required,
@@ -646,18 +646,6 @@ const QualityList: React.FC = () => {
             </Row>
 
             <Row gutter={16}>
-              <Col span={12}>
-                <Form.Item
-                  name="is_qualified"
-                  label="是否合格"
-                  valuePropName="checked"
-                >
-                  <Select placeholder="请选择">
-                    <Option value={true}>合格</Option>
-                    <Option value={false}>不合格</Option>
-                  </Select>
-                </Form.Item>
-              </Col>
               <Col span={12}>
                 <Form.Item
                   name="defects_found"

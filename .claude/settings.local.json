@@ -25,7 +25,11 @@
       "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NjEwMjQwOTksInN1YiI6IjU4IiwidHlwZSI6ImFjY2VzcyJ9.aWg4_fGfFTD9m9kayJpP2hpB6U3_DHQ0ZODBt6Kcjuk\")",
       "Bash(taskkill:*)",
       "Bash(del:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NjExMzI4OTcsInN1YiI6IjIxIiwidHlwZSI6ImFjY2VzcyJ9.rwHpy9-mJOevPUfXwUoiySZHc8cYQYAhZPkA-lahRyM\")",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NjExMzM5NzYsInN1YiI6IjIxIiwidHlwZSI6ImFjY2VzcyJ9.g_WmYLZy0Tzmmdcn4xetIVsvY3om8DB4TEzvtY_qxMk\")",
+      "Bash(netstat:*)",
+      "Bash(wmic:*)"
     ],
     "deny": [],
     "ask": []

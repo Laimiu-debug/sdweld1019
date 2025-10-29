@@ -1,589 +1,365 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import {
-  Form,
-  Input,
-  Button,
-  Card,
-  Row,
-  Col,
-  Select,
-  InputNumber,
-  DatePicker,
-  Typography,
-  Space,
-  message,
-  Steps,
-  Alert,
-  Upload,
-  Descriptions,
-  Divider,
-} from 'antd'
-import {
-  SaveOutlined,
-  EyeOutlined,
-  LeftOutlined,
-  RightOutlined,
-  CheckOutlined,
-  UploadOutlined,
-  ArrowLeftOutlined,
-  ExclamationCircleOutlined,
-} from '@ant-design/icons'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { Card, Typography, Button, Space, Form, Spin, message, Alert, Input, Radio } from 'antd'
+import { ArrowLeftOutlined, SaveOutlined, FormOutlined, FileWordOutlined } from '@ant-design/icons'
+import pqrService from '@/services/pqr'
+import ModuleFormRenderer from '@/components/WPS/ModuleFormRenderer'
+import WPSDocumentEditor from '@/components/DocumentEditor/WPSDocumentEditor'
+import { WPSTemplate } from '@/services/wpsTemplates'
+import wpsTemplateService from '@/services/wpsTemplates'
+import { getPQRModuleById } from '@/constants/pqrModules'
+import { convertModulesToTipTapHTML } from '@/utils/moduleToTipTapHTML'
 import dayjs from 'dayjs'
-import { PQRRecord, PQRStatus } from '@/types'
-import { useAuthStore } from '@/store/authStore'
 
-const { Title, Text } = Typography
-const { TextArea } = Input
-const { Option } = Select
-const { Step } = Steps
+const { Title } = Typography
 
-interface PQREditForm {
-  // 基本信息
-  pqr_number: string
+interface PQREditData {
+  id: number
   title: string
-  test_date: string
-  test_organization: string
-  wps_id?: string
-  status: PQRStatus
-
-  // 材料信息
-  base_material: string
-  base_material_thickness: number
-  filler_material: string
-  filler_material_diameter: number
-  welding_process: string
-  joint_type: string
-  welding_position: string
-
-  // 测试结果
-  tensile_strength: number
-  yield_strength: number
-  elongation: number
-  impact_energy: number
-  bend_test_result: string
-  macro_examination: string
-
-  // 其他信息
-  notes: string
-  attachments: any[]
+  pqr_number: string
+  revision: string
+  status: string
+  template_id?: string
+  modules_data?: Record<string, any>
+  document_html?: string
+  [key: string]: any
 }
 
 const PQREdit: React.FC = () => {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { user } = useAuthStore()
   const [form] = Form.useForm()
-  const [loading, setLoading] = useState(false)
-  const [currentStep, setCurrentStep] = useState(0)
-  const [formData, setFormData] = useState<Partial<PQREditForm>>({})
-  const [hasChanges, setHasChanges] = useState(false)
+  const [pqrData, setPqrData] = useState<PQREditData | null>(null)
+  const [template, setTemplate] = useState<WPSTemplate | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [editMode, setEditMode] = useState<'form' | 'document'>('form')
+  const [documentHTML, setDocumentHTML] = useState<string>('')
 
-  // 步骤配置
-  const steps = [
-    {
-      title: '基本信息',
-      description: '修改PQR的基本信息',
-    },
-    {
-      title: '材料信息',
-      description: '调整材料和工艺参数',
-    },
-    {
-      title: '测试结果',
-      description: '更新测试结果数据',
-    },
-    {
-      title: '附件管理',
-      description: '管理相关文件和证明',
-    },
-  ]
+  // 处理编辑模式切换
+  const handleEditModeChange = (mode: 'form' | 'document') => {
+    setEditMode(mode)
 
-  // 模拟API调用获取PQR详情
-  const fetchPQRDetail = async (pqrId: string): Promise<{ success: boolean; data: PQRRecord }> => {
-    // 模拟API延迟
-    await new Promise(resolve => setTimeout(resolve, 500))
+    // 如果切换到文档模式，从当前表单数据生成HTML
+    if (mode === 'document' && template && pqrData) {
+      const formValues = form.getFieldsValue()
 
-    // 模拟数据
-    const mockData: PQRRecord = {
-      id: pqrId,
-      pqr_number: 'PQR-2024-001',
-      title: '管道对接焊工艺评定',
-      status: 'qualified',
-      test_date: '2024-01-10',
-      test_organization: '第三方检测机构',
-      base_material: 'Q235',
-      filler_material: 'E7018',
-      welding_process: 'SMAW',
-      created_at: '2024-01-10T16:45:00Z',
-      updated_at: '2024-01-10T16:45:00Z',
-      user_id: 'user1',
-    }
+      // 重新构建modules_data从表单值
+      const modulesData: Record<string, any> = {}
 
-    return { success: true, data: mockData }
-  }
+      template.module_instances.forEach(instance => {
+        const moduleData: Record<string, any> = {
+          moduleId: instance.moduleId,
+          customName: instance.customName,
+          data: {}
+        }
 
-  // 获取PQR详情
-  const {
-    data: pqrData,
-    isLoading: isLoadingDetail,
-    error: detailError,
-  } = useQuery({
-    queryKey: ['pqrDetail', id],
-    queryFn: () => fetchPQRDetail(id!),
-    enabled: !!id,
-    onSuccess: (data) => {
-      if (data.success && data.data) {
-        const pqr = data.data
-        form.setFieldsValue({
-          ...pqr,
-          test_date: dayjs(pqr.test_date),
-          base_material_thickness: 12.0,
-          filler_material_diameter: 3.2,
-          joint_type: 'Butt Joint',
-          welding_position: '1G',
-          tensile_strength: 520,
-          yield_strength: 360,
-          elongation: 25,
-          impact_energy: 120,
-          bend_test_result: '面弯和背弯试验均无裂纹，符合标准要求',
-          macro_examination: '焊缝成型良好，无气孔、夹渣等缺陷',
-          notes: '本次工艺评定针对管道对接焊缝，焊接工艺参数合理，测试结果满足标准要求',
-        })
-        setFormData(pqr)
-      }
-    },
-  })
+        const module = getPQRModuleById(instance.moduleId)
+        if (module) {
+          Object.keys(module.fields).forEach(fieldKey => {
+            const formFieldName = `${instance.instanceId}_${fieldKey}`
+            const fieldValue = formValues[formFieldName]
 
-  // 更新PQR的mutation
-  const updatePQRMutation = useMutation({
-    mutationFn: async (data: PQREditForm) => {
-      // 模拟API调用
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      return { success: true, data: { id, ...data } }
-    },
-    onSuccess: () => {
-      message.success('PQR更新成功')
-      setHasChanges(false)
-      navigate(`/pqr/${id}`)
-    },
-    onError: () => {
-      message.error('更新失败，请稍后重试')
-    },
-  })
+            // 包含所有字段，即使是空值
+            if (fieldValue !== undefined && fieldValue !== null && fieldValue !== '') {
+              const fieldDef = module.fields[fieldKey]
+              let processedValue = fieldValue
 
-  // 处理步骤变化
-  const handleStepChange = (step: number) => {
-    setCurrentStep(step)
-  }
+              // 如果是日期字段且值是 dayjs 对象，转换为字符串
+              if (fieldDef?.type === 'date' && dayjs.isDayjs(fieldValue)) {
+                processedValue = fieldValue.format('YYYY-MM-DD')
+              }
 
-  // 处理下一步
-  const handleNext = async () => {
-    try {
-      // 验证当前步骤的表单
-      const fields = getStepFields(currentStep)
-      await form.validateFields(fields)
+              moduleData.data[fieldKey] = processedValue
+            }
+          })
+        }
 
-      // 保存当前步骤的数据
-      const values = form.getFieldsValue(fields)
-      setFormData(prev => ({ ...prev, ...values }))
-      setHasChanges(true)
-
-      // 进入下一步
-      if (currentStep < steps.length - 1) {
-        handleStepChange(currentStep + 1)
-      } else {
-        // 最后一步，提交表单
-        handleSubmit()
-      }
-    } catch (error) {
-      message.error('请完成当前步骤的必填项')
-    }
-  }
-
-  // 处理上一步
-  const handlePrev = () => {
-    if (currentStep > 0) {
-      handleStepChange(currentStep - 1)
-    }
-  }
-
-  // 获取当前步骤需要验证的字段
-  const getStepFields = (step: number): string[] => {
-    const stepFields: string[][] = [
-      // 基本信息
-      ['pqr_number', 'title', 'test_date', 'test_organization', 'status'],
-      // 材料信息
-      ['base_material', 'base_material_thickness', 'filler_material', 'welding_process', 'joint_type', 'welding_position'],
-      // 测试结果
-      ['tensile_strength', 'yield_strength', 'elongation', 'bend_test_result'],
-      // 附件上传
-      [],
-    ]
-
-    return stepFields[step] || []
-  }
-
-  // 处理表单提交
-  const handleSubmit = async () => {
-    setLoading(true)
-    try {
-      // 获取所有表单数据
-      const allValues = form.getFieldsValue()
-      const finalData = { ...formData, ...allValues }
-
-      // 调用更新API
-      await updatePQRMutation.mutateAsync(finalData)
-    } catch (error) {
-      console.error('Submit error:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // 处理取消
-  const handleCancel = () => {
-    if (hasChanges) {
-      Modal.confirm({
-        title: '确认取消？',
-        icon: <ExclamationCircleOutlined />,
-        content: '您有未保存的更改，确定要取消编辑吗？',
-        okText: '确定',
-        cancelText: '继续编辑',
-        onOk: () => {
-          navigate(`/pqr/${id}`)
-        },
+        modulesData[instance.instanceId] = moduleData
       })
-    } else {
-      navigate(`/pqr/${id}`)
+
+      // 生成HTML
+      const html = convertModulesToTipTapHTML(
+        template.module_instances,
+        modulesData,
+        {
+          title: pqrData.title || '',
+          number: pqrData.pqr_number || '',
+          revision: pqrData.revision || 'A'
+        },
+        'pqr'
+      )
+
+      setDocumentHTML(html)
     }
   }
 
-  // 处理预览
-  const handlePreview = () => {
-    const allValues = form.getFieldsValue()
-    const previewData = { ...formData, ...allValues }
+  // 获取 PQR 详情和模板
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!id) return
 
-    console.log('Preview data:', previewData)
-    message.info('预览功能开发中')
-  }
+      try {
+        setLoading(true)
 
-  // 处理表单值变化
-  const handleValuesChange = (changedValues: any, allValues: any) => {
-    setHasChanges(true)
-  }
+        // 获取 PQR 详情
+        const pqrResponse = await pqrService.get(parseInt(id))
+        if (!pqrResponse.success || !pqrResponse.data) {
+          message.error('获取PQR详情失败')
+          return
+        }
 
-  // 渲染当前步骤的表单
-  const renderStepForm = () => {
-    switch (currentStep) {
-      case 0:
-        return (
-          <Row gutter={[16, 16]}>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="pqr_number"
-                label="PQR编号"
-                rules={[{ required: true, message: '请输入PQR编号' }]}
-              >
-                <Input placeholder="例如: PQR-2024-001" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="title"
-                label="标题"
-                rules={[{ required: true, message: '请输入标题' }]}
-              >
-                <Input placeholder="请输入PQR标题" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="test_date"
-                label="测试日期"
-                rules={[{ required: true, message: '请选择测试日期' }]}
-              >
-                <DatePicker style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="test_organization"
-                label="测试机构"
-                rules={[{ required: true, message: '请输入测试机构' }]}
-              >
-                <Input placeholder="请输入测试机构名称" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="status"
-                label="状态"
-                rules={[{ required: true, message: '请选择状态' }]}
-              >
-                <Select placeholder="请选择状态">
-                  <Option value="pending">待处理</Option>
-                  <Option value="qualified">合格</Option>
-                  <Option value="failed">不合格</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item name="wps_id" label="关联WPS">
-                <Select placeholder="请选择关联的WPS（可选）" allowClear>
-                  <Option value="1">WPS-2024-001 - 碳钢管道对接焊工艺</Option>
-                  <Option value="2">WPS-2024-002 - 不锈钢容器角焊缝工艺</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
-        )
+        const pqr = pqrResponse.data
+        setPqrData(pqr)
 
-      case 1:
-        return (
-          <Row gutter={[16, 16]}>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="base_material"
-                label="母材"
-                rules={[{ required: true, message: '请输入母材' }]}
-              >
-                <Input placeholder="例如: Q235" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="base_material_thickness"
-                label="母材厚度 (mm)"
-                rules={[{ required: true, message: '请输入母材厚度' }]}
-              >
-                <InputNumber
-                  min={0}
-                  precision={2}
-                  placeholder="请输入厚度"
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="filler_material"
-                label="焊材"
-                rules={[{ required: true, message: '请输入焊材' }]}
-              >
-                <Input placeholder="例如: E7018" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="filler_material_diameter"
-                label="焊材直径 (mm)"
-                rules={[{ required: true, message: '请输入焊材直径' }]}
-              >
-                <InputNumber
-                  min={0}
-                  precision={1}
-                  placeholder="请输入直径"
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="welding_process"
-                label="焊接方法"
-                rules={[{ required: true, message: '请选择焊接方法' }]}
-              >
-                <Select placeholder="请选择焊接方法">
-                  <Option value="SMAW">SMAW (手工焊)</Option>
-                  <Option value="GMAW">GMAW (熔化极气体保护焊)</Option>
-                  <Option value="GTAW">GTAW (钨极氩弧焊)</Option>
-                  <Option value="FCAW">FCAW (药芯焊丝电弧焊)</Option>
-                  <Option value="SAW">SAW (埋弧焊)</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="joint_type"
-                label="接头类型"
-                rules={[{ required: true, message: '请选择接头类型' }]}
-              >
-                <Select placeholder="请选择接头类型">
-                  <Option value="Butt Joint">对接接头</Option>
-                  <Option value="T-Joint">T形接头</Option>
-                  <Option value="Corner Joint">角接接头</Option>
-                  <Option value="Lap Joint">搭接接头</Option>
-                  <Option value="Edge Joint">边缘接头</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="welding_position"
-                label="焊接位置"
-                rules={[{ required: true, message: '请选择焊接位置' }]}
-              >
-                <Select placeholder="请选择焊接位置">
-                  <Option value="1G">1G (平焊)</Option>
-                  <Option value="2G">2G (横焊)</Option>
-                  <Option value="3G">3G (立焊)</Option>
-                  <Option value="4G">4G (仰焊)</Option>
-                  <Option value="1F">1F (平角焊)</Option>
-                  <Option value="2F">2F (横角焊)</Option>
-                  <Option value="3F">3F (立角焊)</Option>
-                  <Option value="4F">4F (仰角焊)</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
-        )
+        // 如果有 document_html，初始化文档内容
+        if (pqr.document_html) {
+          setDocumentHTML(pqr.document_html)
+        }
 
-      case 2:
-        return (
-          <Row gutter={[16, 16]}>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="tensile_strength"
-                label="抗拉强度 (MPa)"
-                rules={[{ required: true, message: '请输入抗拉强度' }]}
-              >
-                <InputNumber
-                  min={0}
-                  precision={2}
-                  placeholder="请输入抗拉强度"
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="yield_strength"
-                label="屈服强度 (MPa)"
-                rules={[{ required: true, message: '请输入屈服强度' }]}
-              >
-                <InputNumber
-                  min={0}
-                  precision={2}
-                  placeholder="请输入屈服强度"
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="elongation"
-                label="延伸率 (%)"
-                rules={[{ required: true, message: '请输入延伸率' }]}
-              >
-                <InputNumber
-                  min={0}
-                  precision={2}
-                  placeholder="请输入延伸率"
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="impact_energy"
-                label="冲击能量 (J)"
-                rules={[{ required: true, message: '请输入冲击能量' }]}
-              >
-                <InputNumber
-                  min={0}
-                  precision={2}
-                  placeholder="请输入冲击能量"
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24}>
-              <Form.Item
-                name="bend_test_result"
-                label="弯曲试验结果"
-                rules={[{ required: true, message: '请输入弯曲试验结果' }]}
-              >
-                <TextArea
-                  rows={2}
-                  placeholder="请描述弯曲试验结果"
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24}>
-              <Form.Item
-                name="macro_examination"
-                label="宏观检查结果"
-                rules={[{ required: true, message: '请输入宏观检查结果' }]}
-              >
-                <TextArea
-                  rows={2}
-                  placeholder="请描述宏观检查结果"
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-        )
+        // 如果有 template_id，尝试获取模板
+        if (pqr.template_id) {
+          try {
+            const templateResponse = await wpsTemplateService.getTemplate(pqr.template_id)
+            if (templateResponse.success && templateResponse.data) {
+              setTemplate(templateResponse.data)
+            }
+          } catch (error) {
+            console.warn('获取模板失败（模板可能已被删除）:', error)
+            // 模板不存在时不显示错误，因为文档数据仍然完整
+          }
+        }
 
-      case 3:
-        return (
-          <Row gutter={[16, 16]}>
-            <Col xs={24}>
-              <Form.Item
-                name="attachments"
-                label="附件管理"
-              >
-                <Upload.Dragger
-                  name="files"
-                  multiple
-                  action="/api/upload"
-                >
-                  <p className="ant-upload-drag-icon">
-                    <UploadOutlined />
-                  </p>
-                  <p className="ant-upload-text">点击或拖拽文件到此区域上传</p>
-                  <p className="ant-upload-hint">
-                    支持单个或批量上传。严格禁止上传公司数据或其他敏感信息。
-                  </p>
-                </Upload.Dragger>
-              </Form.Item>
-            </Col>
-            <Col xs={24}>
-              <Form.Item name="notes" label="备注">
-                <TextArea
-                  rows={3}
-                  placeholder="请输入其他备注信息"
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-        )
+        // 初始化表单数据
+        const formValues: Record<string, any> = {
+          title: pqr.title,
+          pqr_number: pqr.pqr_number,
+          revision: pqr.revision,
+        }
 
-      default:
-        return null
+        // 从 modules_data 中恢复表单值
+        if (pqr.modules_data) {
+          Object.entries(pqr.modules_data).forEach(([moduleId, moduleContent]: [string, any]) => {
+            if (moduleContent && moduleContent.data) {
+              Object.entries(moduleContent.data).forEach(([fieldKey, fieldValue]: [string, any]) => {
+                const formFieldName = `${moduleId}_${fieldKey}`
+
+                // 获取字段定义以检查字段类型
+                const module = getPQRModuleById(moduleContent.moduleId)
+                const fieldDef = module?.fields?.[fieldKey]
+
+                // 如果是日期字段且值是字符串，转换为 dayjs 对象
+                if (fieldDef?.type === 'date' && fieldValue && typeof fieldValue === 'string') {
+                  formValues[formFieldName] = dayjs(fieldValue)
+                } else {
+                  formValues[formFieldName] = fieldValue
+                }
+              })
+            }
+          })
+        }
+
+        form.setFieldsValue(formValues)
+      } catch (error: any) {
+        console.error('获取数据失败:', error)
+        message.error(error.response?.data?.detail || '获取数据失败')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+  }, [id, form])
+
+  // 处理保存
+  const handleSave = async () => {
+    try {
+      setSaving(true)
+
+      // 验证表单
+      const values = await form.validateFields()
+
+      // 重新构建 modules_data
+      let pqrNumber = ''
+      let pqrTitle = ''
+      let pqrRevision = 'A'
+      const modulesData: Record<string, any> = {}
+
+      // 如果有模板，使用模板结构
+      if (template && template.module_instances) {
+        template.module_instances.forEach(instance => {
+          const moduleData: Record<string, any> = {}
+          const module = getPQRModuleById(instance.moduleId)
+
+          if (module) {
+            Object.keys(module.fields).forEach(fieldKey => {
+              const formFieldName = `${instance.instanceId}_${fieldKey}`
+              if (values[formFieldName] !== undefined && values[formFieldName] !== null && values[formFieldName] !== '') {
+                const fieldDef = module.fields[fieldKey]
+                let fieldValue = values[formFieldName]
+
+                // 如果是日期字段且值是 dayjs 对象，转换为字符串
+                if (fieldDef?.type === 'date' && dayjs.isDayjs(fieldValue)) {
+                  fieldValue = fieldValue.format('YYYY-MM-DD')
+                }
+
+                moduleData[fieldKey] = fieldValue
+
+                // 从 pqr_basic_info 模块中提取 pqr_number, title, revision
+                if (instance.moduleId === 'pqr_basic_info') {
+                  if (fieldKey === 'pqr_number') {
+                    pqrNumber = values[formFieldName]
+                  } else if (fieldKey === 'title') {
+                    pqrTitle = values[formFieldName]
+                  } else if (fieldKey === 'revision') {
+                    pqrRevision = values[formFieldName]
+                  }
+                }
+              }
+            })
+          }
+
+          if (Object.keys(moduleData).length > 0) {
+            modulesData[instance.instanceId] = {
+              moduleId: instance.moduleId,
+              customName: instance.customName,
+              rowIndex: instance.rowIndex,
+              columnIndex: instance.columnIndex,
+              data: moduleData,
+            }
+          }
+        })
+      } else if (pqrData?.modules_data) {
+        // 没有模板时，保留原有的 modules_data 结构，只更新表单值
+        Object.entries(pqrData.modules_data).forEach(([instanceId, moduleContent]: [string, any]) => {
+          if (moduleContent && moduleContent.data) {
+            const moduleData: Record<string, any> = {}
+            const module = getPQRModuleById(moduleContent.moduleId)
+
+            if (module) {
+              Object.keys(module.fields).forEach(fieldKey => {
+                const formFieldName = `${instanceId}_${fieldKey}`
+                if (values[formFieldName] !== undefined && values[formFieldName] !== null && values[formFieldName] !== '') {
+                  const fieldDef = module.fields[fieldKey]
+                  let fieldValue = values[formFieldName]
+
+                  // 如果是日期字段且值是 dayjs 对象，转换为字符串
+                  if (fieldDef?.type === 'date' && dayjs.isDayjs(fieldValue)) {
+                    fieldValue = fieldValue.format('YYYY-MM-DD')
+                  }
+
+                  moduleData[fieldKey] = fieldValue
+                }
+              })
+            }
+
+            if (Object.keys(moduleData).length > 0) {
+              modulesData[instanceId] = {
+                moduleId: moduleContent.moduleId,
+                customName: moduleContent.customName,
+                data: moduleData,
+              }
+            }
+          }
+        })
+      }
+
+      // 构建更新数据
+      const updateData: any = {
+        title: pqrTitle || values.title,
+        pqr_number: pqrNumber || values.pqr_number,
+        revision: pqrRevision || values.revision,
+      }
+
+      if (Object.keys(modulesData).length > 0) {
+        updateData.modules_data = modulesData
+      }
+
+      // 调用 API 更新
+      const response = await pqrService.update(parseInt(id!), updateData)
+      if (response.success) {
+        message.success('保存成功')
+        navigate('/pqr')
+      } else {
+        message.error(response.message || '保存失败')
+      }
+    } catch (error: any) {
+      console.error('保存失败:', error)
+      message.error(error.response?.data?.detail || '保存失败')
+    } finally {
+      setSaving(false)
     }
   }
 
-  if (isLoadingDetail) {
+  // 保存文档HTML
+  const handleSaveDocument = async (html: string) => {
+    try {
+      setSaving(true)
+      setDocumentHTML(html)
+
+      // 更新数据库中的 document_html
+      const updateData = {
+        document_html: html
+      }
+
+      const response = await pqrService.update(parseInt(id!), updateData)
+      if (response.success) {
+        message.success('文档已保存')
+      } else {
+        message.error(response.message || '保存失败')
+      }
+    } catch (error: any) {
+      console.error('保存文档失败:', error)
+      message.error(error.response?.data?.detail || '保存文档失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // 导出为Word
+  const handleExportWord = async () => {
+    try {
+      message.info('Word导出功能开发中...')
+    } catch (error: any) {
+      console.error('导出Word失败:', error)
+      message.error('导出Word失败')
+    }
+  }
+
+  // 导出为PDF
+  const handleExportPDF = async () => {
+    try {
+      message.info('PDF导出功能开发中...')
+    } catch (error: any) {
+      console.error('导出PDF失败:', error)
+      message.error('导出PDF失败')
+    }
+  }
+
+
+  if (loading) {
     return (
       <div className="page-container">
-        <div className="flex justify-center items-center h-64">
-          <span>加载中...</span>
-        </div>
+        <Spin size="large" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '400px' }} />
       </div>
     )
   }
 
-  if (detailError) {
+  if (!pqrData) {
     return (
       <div className="page-container">
-        <Alert
-          message="加载失败"
-          description="无法加载PQR详情，请稍后重试"
-          type="error"
-          showIcon
-        />
+        <div className="page-header">
+          <Button
+            icon={<ArrowLeftOutlined />}
+            onClick={() => navigate('/pqr')}
+          >
+            返回列表
+          </Button>
+          <Title level={2}>编辑PQR</Title>
+        </div>
+        <Card>
+          <Alert message="未找到PQR数据" type="error" />
+        </Card>
       </div>
     )
   }
@@ -591,76 +367,145 @@ const PQREdit: React.FC = () => {
   return (
     <div className="page-container">
       <div className="page-header">
-        <Space className="w-full justify-between">
-          <Space>
-            <Button
-              icon={<ArrowLeftOutlined />}
-              onClick={handleCancel}
-            >
-              返回详情
-            </Button>
-            <Title level={2} className="mb-0">编辑PQR</Title>
-          </Space>
-          {hasChanges && (
-            <Text type="warning">
-              <ExclamationCircleOutlined /> 您有未保存的更改
-            </Text>
-          )}
+        <Space>
+          <Button
+            icon={<ArrowLeftOutlined />}
+            onClick={() => navigate('/pqr')}
+          >
+            返回列表
+          </Button>
+          <Title level={2}>编辑PQR</Title>
         </Space>
       </div>
 
       <Card>
-        {/* 步骤指示器 */}
-        <Steps current={currentStep} className="mb-6">
-          {steps.map((step, index) => (
-            <Step
-              key={index}
-              title={step.title}
-              description={step.description}
-              icon={index < currentStep ? <CheckOutlined /> : undefined}
-            />
-          ))}
-        </Steps>
+        {/* 如果模板被删除，显示警告信息 */}
+        {!template && pqrData?.modules_data && (
+          <Alert
+            message="模板已被删除"
+            description="此文档使用的模板已被删除，但文档数据完整，仍可正常编辑。"
+            type="warning"
+            showIcon
+            closable
+            style={{ marginBottom: 16 }}
+          />
+        )}
 
-        {/* 表单区域 */}
-        <Form
-          form={form}
-          layout="vertical"
-          onValuesChange={handleValuesChange}
-        >
-          {renderStepForm()}
-        </Form>
+        {/* 如果有模板，显示模板信息 */}
+        {template && (
+          <Alert
+            message="使用模板编辑"
+            description={`当前使用模板: ${template.name || template.id}`}
+            type="info"
+            showIcon
+            closable
+            style={{ marginBottom: 16 }}
+          />
+        )}
 
-        {/* 操作按钮 */}
-        <div className="flex justify-between mt-6">
-          <Button
-            icon={<LeftOutlined />}
-            onClick={handlePrev}
-            disabled={currentStep === 0}
+        {/* 编辑模式切换 */}
+        <div style={{ marginBottom: 16 }}>
+          <Radio.Group
+            value={editMode}
+            onChange={e => handleEditModeChange(e.target.value)}
+            buttonStyle="solid"
           >
-            上一步
-          </Button>
-
-          <Space>
-            <Button onClick={handleCancel}>
-              取消
-            </Button>
-            <Button
-              icon={<EyeOutlined />}
-              onClick={handlePreview}
-            >
-              预览
-            </Button>
-            <Button
-              type="primary"
-              icon={currentStep === steps.length - 1 ? <SaveOutlined /> : <RightOutlined />}
-              onClick={handleNext}
-              loading={loading || updatePQRMutation.isLoading}
-            >
-              {currentStep === steps.length - 1 ? '保存更改' : '下一步'}
-            </Button>
-          </Space>
+            <Radio.Button value="form">
+              <FormOutlined /> 表单编辑
+            </Radio.Button>
+            <Radio.Button value="document">
+              <FileWordOutlined /> 文档编辑
+            </Radio.Button>
+          </Radio.Group>
         </div>
+
+        {/* 如果有 modules_data（无论是否有模板），都可以编辑 */}
+        {pqrData?.modules_data ? (
+          <>
+            {editMode === 'form' ? (
+              <Form
+                form={form}
+                layout="vertical"
+              >
+                {/* 基本信息 */}
+                <Form.Item
+                  label="PQR编号"
+                  name="pqr_number"
+                  rules={[{ required: true, message: '请输入PQR编号' }]}
+                >
+                  <Input />
+                </Form.Item>
+
+                <Form.Item
+                  label="标题"
+                  name="title"
+                  rules={[{ required: true, message: '请输入标题' }]}
+                >
+                  <Input />
+                </Form.Item>
+
+                <Form.Item
+                  label="版本"
+                  name="revision"
+                >
+                  <Input />
+                </Form.Item>
+
+                {/* 模块表单 - 使用模板或从 modules_data 重建 */}
+                {template && template.module_instances ? (
+                  <ModuleFormRenderer
+                    modules={template.module_instances || []}
+                    form={form}
+                    moduleType="pqr"
+                  />
+                ) : (
+                  <ModuleFormRenderer
+                    modules={Object.entries(pqrData.modules_data).map(([instanceId, content]: [string, any]) => ({
+                      instanceId,
+                      moduleId: content.moduleId,
+                      customName: content.customName || '',
+                      rowIndex: content.rowIndex,
+                      columnIndex: content.columnIndex,
+                      order: 0,
+                    }))}
+                    form={form}
+                    moduleType="pqr"
+                  />
+                )}
+              </Form>
+            ) : (
+              <WPSDocumentEditor
+                initialContent={documentHTML}
+                onSave={handleSaveDocument}
+                onExportWord={handleExportWord}
+                onExportPDF={handleExportPDF}
+              />
+            )}
+
+            {editMode === 'form' && (
+              <Space style={{ marginTop: 24 }}>
+                <Button
+                  type="primary"
+                  icon={<SaveOutlined />}
+                  loading={saving}
+                  onClick={handleSave}
+                >
+                  保存
+                </Button>
+                <Button onClick={() => navigate('/pqr')}>
+                  取消
+                </Button>
+              </Space>
+            )}
+          </>
+        ) : (
+          <Alert
+            message="无法编辑此PQR"
+            description="此PQR没有模块数据，无法编辑"
+            type="error"
+            showIcon
+          />
+        )}
       </Card>
     </div>
   )

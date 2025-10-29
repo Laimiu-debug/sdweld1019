@@ -1,67 +1,40 @@
-#!/usr/bin/env python3
 """
 检查数据库中的用户
 """
 import sys
-sys.path.append('.')
+import os
 
-from app.core.database import engine
-from sqlalchemy import text
-from app.services.user_service import user_service
+# 添加项目根目录到Python路径
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from app.core.database import SessionLocal
+from app.models.user import User
 
 def check_users():
-    """检查数据库中的用户"""
+    """检查用户"""
+    db = SessionLocal()
+    
     try:
-        print("Checking existing users...")
-        with engine.connect() as conn:
-            result = conn.execute(text("""
-                SELECT id, username, email, is_active, is_verified, member_tier, membership_type
-                FROM users 
-                ORDER BY id
-                LIMIT 10
-            """))
-            users = result.fetchall()
-            
-            if users:
-                print(f"Found {len(users)} users:")
-                for user in users:
-                    print(f"  ID: {user[0]}, Username: {user[1]}, Email: {user[2]}, Active: {user[3]}, Verified: {user[4]}, Tier: {user[5]}, Type: {user[6]}")
-            else:
-                print("No users found in database")
-                
-        # 尝试创建一个测试用户
-        print("\nTrying to create test user...")
-        from app.core.database import SessionLocal
-        from app.schemas.user import UserCreate
+        users = db.query(User).all()
         
-        db = SessionLocal()
-        try:
-            # 创建测试用户
-            user_data = UserCreate(
-                username="testuser123",
-                email="test123@example.com",
-                password="test123",
-                full_name="Test User 123"
-            )
-            
-            user = user_service.create(db, obj_in=user_data)
-            print(f"Created user: ID={user.id}, Email={user.email}")
-            
-            # 尝试登录
-            print("\nTrying to authenticate test user...")
-            auth_user = user_service.authenticate(db, email="test123@example.com", password="test123")
-            if auth_user:
-                print(f"Authentication successful: ID={auth_user.id}, Email={auth_user.email}")
-            else:
-                print("Authentication failed")
-                
-        except Exception as e:
-            print(f"Error creating user: {e}")
-        finally:
-            db.close()
-            
+        print(f"\n找到 {len(users)} 个用户:\n")
+        print("=" * 80)
+        
+        for user in users:
+            print(f"ID: {user.id}")
+            print(f"  Email: {user.email}")
+            print(f"  用户名: {user.username if hasattr(user, 'username') else 'N/A'}")
+            print(f"  激活: {user.is_active}")
+            print(f"  超级用户: {user.is_superuser}")
+            print("-" * 80)
+        
     except Exception as e:
-        print(f"Error checking users: {e}")
+        print(f"❌ 错误: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        db.close()
 
 if __name__ == "__main__":
     check_users()
+

@@ -56,6 +56,7 @@ const PERMISSION_ACTIONS = [
   { key: 'create', name: '创建', color: 'green' },
   { key: 'edit', name: '编辑', color: 'orange' },
   { key: 'delete', name: '删除', color: 'red' },
+  { key: 'approve', name: '审批', color: 'purple' },
 ]
 
 const RolesNew: React.FC = () => {
@@ -109,6 +110,7 @@ const RolesNew: React.FC = () => {
           create: false,
           edit: false,
           delete: false,
+          approve: false,
         }
       })
       form.setFieldsValue({ permissions: defaultPermissions })

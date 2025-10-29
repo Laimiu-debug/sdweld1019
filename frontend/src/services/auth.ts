@@ -43,6 +43,12 @@ export interface ChangePasswordData {
   confirm_password: string
 }
 
+export interface VerificationCodeLoginRequest {
+  account: string
+  verification_code: string
+  account_type: 'email' | 'phone'
+}
+
 class AuthService {
   private readonly TOKEN_KEY = 'token'
   private readonly REFRESH_TOKEN_KEY = 'refresh_token'
@@ -206,6 +212,48 @@ class AuthService {
       return false
     } catch (error) {
       console.error('❌ 登录异常:', error)
+      return false
+    }
+  }
+
+  // 验证码登录
+  async loginWithVerificationCode(loginData: VerificationCodeLoginRequest): Promise<boolean> {
+    try {
+      console.log('🔐 开始验证码登录流程，账号:', loginData.account)
+
+      // 调用验证码登录API
+      const response = await apiService.post<AuthResponse>('/auth/login-with-verification-code', loginData)
+
+      console.log('📦 验证码登录API响应:', response)
+
+      // 提取认证数据
+      let authData: AuthResponse | null = null
+
+      if (response.success && response.data) {
+        if ((response.data as any).access_token) {
+          authData = response.data as AuthResponse
+        }
+      } else if ((response as any).access_token) {
+        authData = response as any as AuthResponse
+      }
+
+      if (authData && authData.access_token) {
+        console.log('✅ 验证码登录成功，保存认证信息')
+        const { access_token, refresh_token, user } = authData
+
+        // 存储token和用户信息
+        localStorage.setItem(this.TOKEN_KEY, access_token)
+        localStorage.setItem(this.REFRESH_TOKEN_KEY, refresh_token)
+        localStorage.setItem(this.USER_KEY, JSON.stringify(user))
+
+        console.log('✅ 认证信息已保存到localStorage')
+        return true
+      }
+
+      console.error('❌ 验证码登录失败：响应数据格式不正确', response)
+      return false
+    } catch (error) {
+      console.error('❌ 验证码登录异常:', error)
       return false
     }
   }
@@ -502,7 +550,8 @@ class AuthService {
 
     // 非企业管理权限的处理
     // 如果用户有明确的权限字段，使用权限字段（企业内部权限）
-    if (user.permissions) {
+    // 注意：只有当permissions字段存在且不为空时才使用企业权限检查
+    if (user.permissions && user.permissions !== '' && user.permissions !== '{}') {
       // 处理权限字段可能是字符串的情况
       let permissions: any = user.permissions
       if (typeof permissions === 'string') {
@@ -512,6 +561,13 @@ class AuthService {
           console.error('Failed to parse permissions:', error)
           permissions = {}
         }
+      }
+
+      // 检查解析后的permissions对象是否为空
+      if (Object.keys(permissions).length === 0) {
+        // 如果permissions为空对象，使用会员等级权限
+        const membershipTier = (user as any).member_tier || user.membership_tier || 'personal_free'
+        return this.checkMembershipPermission(membershipTier, permission)
       }
 
       // 将权限名称转换为对应的权限字段

@@ -76,6 +76,8 @@ interface TransactionLog {
   timestamp: string
   operator: string
   ip: string
+  amount: number  // 添加金额字段
+  status: string  // 添加状态字段
 }
 
 const SubscriptionHistory: React.FC = () => {
@@ -100,39 +102,73 @@ const SubscriptionHistory: React.FC = () => {
         // 使用统一的API服务获取订阅历史
         const response = await apiService.get('/members/history')
 
-        if (response.success && Array.isArray(response.data)) {
-          const data = response.data
+        console.log('订阅历史API响应:', response)
+
+        // API返回的数据结构是嵌套的: response.data.data 才是真正的数组
+        if (response.success && response.data && Array.isArray(response.data.data)) {
+          const data = response.data.data
+          console.log('订阅数据:', data)
 
           // 将API返回的数据转换为组件需要的格式
-          const formattedSubscriptions = data.map((item: any) => ({
-            id: item.id?.toString() || Date.now().toString(),
-            orderId: item.id?.toString() || Date.now().toString(),
-            planName: getPlanDisplayName(item.plan_id) || '未知套餐',
-            planType: getPlanTypeFromId(item.plan_id),
-            amount: item.price || 0,
-            currency: item.currency || 'CNY',
-            status: item.status === 'active' ? 'paid' :
-                   item.status === 'cancelled' ? 'cancelled' :
-                   item.status === 'expired' ? 'failed' : 'pending',
-            paymentMethod: item.payment_method || 'unknown',
-            startDate: item.start_date ? formatDate(item.start_date) : '',
-            endDate: item.end_date ? formatDate(item.end_date) : '',
-            createdAt: item.created_at ? formatDate(item.created_at) : '',
-            paidAt: item.last_payment_date ? formatDate(item.last_payment_date) : '',
-            invoiceUrl: null, // API暂时不支持发票
-            description: `${getPlanDisplayName(item.plan_id) || '未知套餐'} - ${getBillingCycleName(item.billing_cycle) || 'unknown'}`,
-            autoRenew: item.auto_renew || false,
-            features: [], // 可以从其他API获取功能列表
-          }))
+          const formattedSubscriptions = data.map((item: any) => {
+            // 获取第一个交易记录作为订单信息
+            const firstTransaction = item.transactions && item.transactions.length > 0 ? item.transactions[0] : null
+
+            return {
+              id: item.id?.toString() || Date.now().toString(),
+              orderId: firstTransaction?.transaction_id || `SUB-${item.id}`,
+              planName: getPlanDisplayName(item.plan_id) || '未知套餐',
+              planType: getPlanTypeFromId(item.plan_id),
+              amount: item.price || 0,
+              currency: item.currency || 'CNY',
+              status: item.status === 'active' ? 'paid' :
+                     item.status === 'cancelled' ? 'cancelled' :
+                     item.status === 'expired' ? 'failed' :
+                     item.status === 'pending' ? 'pending' : 'pending',
+              paymentMethod: item.payment_method || 'unknown',
+              // 保留原始的ISO字符串,不要在这里格式化
+              startDate: item.start_date || '',
+              endDate: item.end_date || '',
+              createdAt: item.created_at || '',
+              paidAt: item.last_payment_date || '',
+              invoiceUrl: null, // API暂时不支持发票
+              description: `${getPlanDisplayName(item.plan_id) || '未知套餐'} - ${getBillingCycleName(item.billing_cycle) || 'unknown'}`,
+              autoRenew: item.auto_renew || false,
+              features: [], // 可以从其他API获取功能列表
+            }
+          })
 
           setSubscriptions(formattedSubscriptions)
+
+          // 处理交易记录
+          const allTransactions: TransactionLog[] = []
+          data.forEach((item: any) => {
+            if (item.transactions && Array.isArray(item.transactions)) {
+              item.transactions.forEach((tx: any) => {
+                allTransactions.push({
+                  id: tx.id?.toString() || Date.now().toString(),
+                  subscriptionId: item.id?.toString() || '',
+                  action: tx.status === 'success' ? '支付成功' :
+                         tx.status === 'pending' ? '待支付' :
+                         tx.status === 'pending_confirm' ? '待确认' :
+                         tx.status === 'failed' ? '支付失败' : '未知状态',
+                  description: tx.description || `${tx.payment_method} 支付 ¥${tx.amount}`,
+                  timestamp: tx.transaction_date || tx.created_at || '',
+                  operator: '系统',
+                  ip: '-',
+                  amount: tx.amount || 0,  // 保存原始金额
+                  status: tx.status || 'unknown',  // 保存原始状态
+                })
+              })
+            }
+          })
+          setTransactions(allTransactions)
         } else {
           // API调用失败或数据格式不正确
           console.log('获取订阅历史失败或数据为空')
           setSubscriptions([])
+          setTransactions([])
         }
-
-        setTransactions([]) // 暂时没有交易记录API
       } catch (error) {
         console.error('获取订阅历史失败:', error)
         // 不要显示错误消息，直接显示空状态
@@ -194,9 +230,19 @@ const SubscriptionHistory: React.FC = () => {
     const pending = subscriptions.filter(sub => sub.status === 'pending').length
     const failed = subscriptions.filter(sub => sub.status === 'failed').length
     const refunded = subscriptions.filter(sub => sub.status === 'refunded').length
-    const totalAmount = subscriptions
-      .filter(sub => sub.status === 'paid')
-      .reduce((sum, sub) => sum + sub.amount, 0)
+
+    // 统计所有成功支付的交易金额
+    // 注意: transactions 数组中的交易记录才是实际支付的金额(包含补差价计算)
+    const successfulTransactions = transactions.filter(tx =>
+      tx.status === 'success' // 使用原始状态字段
+    )
+
+    // 计算总消费金额
+    const totalAmount = successfulTransactions.reduce((sum, tx) => {
+      return sum + (tx.amount || 0)
+    }, 0)
+
+    const successfulPaymentCount = successfulTransactions.length
 
     return {
       total,
@@ -204,8 +250,8 @@ const SubscriptionHistory: React.FC = () => {
       pending,
       failed,
       refunded,
-      totalAmount,
-      averageAmount: paid > 0 ? Math.round(totalAmount / paid) : 0,
+      totalAmount: parseFloat(totalAmount.toFixed(2)),
+      averageAmount: successfulPaymentCount > 0 ? parseFloat((totalAmount / successfulPaymentCount).toFixed(2)) : 0,
     }
   }
 

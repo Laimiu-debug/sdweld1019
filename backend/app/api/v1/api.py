@@ -13,6 +13,10 @@ from app.api.v1.endpoints import (
     members,
     roles,
     wps,
+    wps_export,
+    wps_templates,
+    custom_modules,
+    shared_library,
     pqr,
     ppqr,
     welders,
@@ -29,6 +33,10 @@ from app.api.v1.endpoints import (
     enterprise,
     company_roles,
     workspace,
+    dashboard,
+    payments,
+    notifications,
+    approvals,
 )
 
 api_router = APIRouter()
@@ -39,6 +47,9 @@ api_router.include_router(auth.router, prefix="/auth", tags=["认证"])
 # 文件上传路由
 api_router.include_router(upload.router, prefix="/upload", tags=["文件上传"])
 
+# 仪表盘路由
+api_router.include_router(dashboard.router, prefix="/dashboard", tags=["仪表盘"])
+
 # 管理员认证路由
 api_router.include_router(admin_auth.router, prefix="/admin/auth", tags=["管理员认证"])
 # 添加注释触发重新加载 - v2
@@ -48,7 +59,7 @@ api_router.include_router(admin.router, prefix="/admin", tags=["管理员功能"
 # api_router.include_router(admin_complete.router, prefix="/admin", tags=["管理员功能"])
 # api_router.include_router(admin_simple.router, prefix="/admin", tags=["简化管理员功能"])
 api_router.include_router(system_admin.router, prefix="/admin/system", tags=["系统管理"])
-# api_router.include_router(membership_admin.router, prefix="/admin/membership", tags=["会员管理"])
+api_router.include_router(membership_admin.router, prefix="/admin/membership", tags=["会员管理"])
 
 # 用户管理路由
 api_router.include_router(users.router, prefix="/users", tags=["用户管理"])
@@ -56,11 +67,29 @@ api_router.include_router(users.router, prefix="/users", tags=["用户管理"])
 # 会员管理路由
 api_router.include_router(members.router, prefix="/members", tags=["会员管理"])
 
+# 支付管理路由
+api_router.include_router(payments.router, prefix="/payments", tags=["支付管理"])
+
+# 通知管理路由
+api_router.include_router(notifications.router, prefix="/notifications", tags=["通知管理"])
+
 # 角色权限管理路由
 api_router.include_router(roles.router, prefix="/roles", tags=["角色权限管理"])
 
 # WPS管理路由
 api_router.include_router(wps.router, prefix="/wps", tags=["WPS管理"])
+
+# WPS导出路由
+api_router.include_router(wps_export.router, prefix="/wps", tags=["WPS导出"])
+
+# WPS模板管理路由
+api_router.include_router(wps_templates.router, prefix="/wps-templates", tags=["WPS模板管理"])
+
+# 自定义模块管理路由
+api_router.include_router(custom_modules.router, prefix="/custom-modules", tags=["自定义模块管理"])
+
+# 共享库路由
+api_router.include_router(shared_library.router, prefix="/shared-library", tags=["共享库管理"])
 
 # PQR管理路由
 api_router.include_router(pqr.router, prefix="/pqr", tags=["PQR管理"])
@@ -97,6 +126,9 @@ api_router.include_router(company_roles.router, prefix="/enterprise", tags=["企
 
 # 工作区管理路由
 api_router.include_router(workspace.router, prefix="/workspace", tags=["工作区管理"])
+
+# 审批管理路由
+api_router.include_router(approvals.router, prefix="/approvals", tags=["审批管理"])
 
 # 系统管理路由
 api_router.include_router(system.router, prefix="/system", tags=["系统管理"])

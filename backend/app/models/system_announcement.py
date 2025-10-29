@@ -26,6 +26,7 @@ class SystemAnnouncement(Base):
     # 显示设置
     is_published = Column(Boolean, default=False)               # 是否发布
     is_pinned = Column(Boolean, default=False)                  # 是否置顶
+    is_auto_generated = Column(Boolean, default=False)          # 是否为系统自动生成
     target_audience = Column(String(50), default="all")         # 目标受众: all, free, pro, enterprise
 
     # 时间设置

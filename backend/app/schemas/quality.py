@@ -205,6 +205,9 @@ class QualityInspectionResponse(QualityInspectionBase):
     company_id: Optional[int] = None
     factory_id: Optional[int] = None
 
+    # 添加is_qualified字段（从模型属性计算）
+    is_qualified: bool = Field(default=False, description="是否合格（根据result计算）")
+
     # 审计字段
     created_at: datetime
     updated_at: datetime

@@ -5,7 +5,8 @@ from typing import Optional
 from datetime import datetime
 
 from sqlalchemy.orm import Mapped, relationship
-from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, ForeignKey, Index, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 
 from app.core.database import Base
 
@@ -28,7 +29,7 @@ class WPS(Base):
     access_level = Column(String(20), default="private", comment="访问级别: private/factory/company/public")
 
     # 基本信息
-    wps_number = Column(String(50), unique=True, index=True, nullable=False, comment="WPS编号")
+    wps_number = Column(String(50), index=True, nullable=False, comment="WPS编号")
     title = Column(String(200), nullable=False, comment="标题")
     revision = Column(String(10), default="A", comment="版本号")
     status = Column(String(20), default="draft", comment="状态: draft, approved, obsolete")
@@ -116,6 +117,25 @@ class WPS(Base):
     approved_by = Column(Integer, ForeignKey("users.id"), comment="批准人ID")
     approved_date = Column(DateTime, comment="批准日期")
 
+    # ==================== JSONB动态字段（模板驱动） ====================
+    # 修改为外键 + SET NULL：当模板被删除时，已创建的WPS文档应该保持可编辑
+    # template_id 设为 NULL 表示模板已被删除，但文档数据仍然完整保存在 modules_data 中
+    template_id = Column(String(100), ForeignKey('wps_templates.id', ondelete='SET NULL'), nullable=True, index=True, comment="使用的模板ID（可为空，模板删除后自动设为NULL）")
+
+    # 新增：完全灵活的模块数据存储
+    # 结构: { "module_instance_id": { "field_key": value, ... }, ... }
+    modules_data = Column(JSONB, default={}, comment="所有模块数据（JSON格式），支持无限自定义")
+
+    # 文档编辑模式：存储富文本HTML内容
+    document_html = Column(Text, nullable=True, comment="文档HTML内容（用于文档编辑模式）")
+
+    # 保留以下字段用于向后兼容（逐步废弃）
+    header_info = Column(JSONB, default={}, comment="表头数据（JSON格式）- 已废弃，使用 modules_data")
+    summary_info = Column(JSONB, default={}, comment="概要信息（JSON格式）- 已废弃，使用 modules_data")
+    diagram_info = Column(JSONB, default={}, comment="示意图信息（JSON格式）- 已废弃，使用 modules_data")
+    weld_layers = Column(JSONB, default=[], comment="焊层信息数组（JSON格式）- 已废弃，使用 modules_data")
+    additional_info = Column(JSONB, default={}, comment="附加信息（JSON格式）- 已废弃，使用 modules_data")
+
     # ==================== 审计字段 ====================
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False, comment="创建人ID")
     updated_by = Column(Integer, ForeignKey("users.id"), nullable=True, comment="更新人ID")
@@ -129,6 +149,15 @@ class WPS(Base):
     # factory_rel = relationship("Factory", back_populates="wps_records")
     # reviewer = relationship("User", foreign_keys=[reviewed_by])
     # approver = relationship("User", foreign_keys=[approved_by])
+
+    # ==================== 表级约束 ====================
+    # 注意：部分唯一索引已在数据库迁移脚本中创建
+    # 这里只定义普通索引以提高查询性能
+    __table_args__ = (
+        # 复合索引：提高查询性能
+        Index('idx_wps_workspace_user', 'workspace_type', 'user_id'),
+        Index('idx_wps_workspace_company', 'workspace_type', 'company_id'),
+    )
 
 
 class WPSRevision(Base):

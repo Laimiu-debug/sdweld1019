@@ -97,7 +97,7 @@ const ResponsiveContainer: React.FC<ResponsiveContainerProps> = ({
           placement="left"
           onClose={toggleSidebar}
           open={sidebarVisible}
-          bodyStyle={{ padding: 0 }}
+          styles={{ body: { padding: 0 } }}
           closable={false}
           extra={
             <Button

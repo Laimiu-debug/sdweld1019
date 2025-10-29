@@ -28,6 +28,8 @@ from app.schemas.verification_code import (
 )
 from app.services.user_service import user_service
 from app.services.verification_service import verification_service
+from app.services.email_service import email_service
+from app.services.sms_service import sms_service
 from pydantic import BaseModel
 
 class RegisterResponse(BaseModel):
@@ -578,26 +580,58 @@ async def send_verification_code(
             expires_minutes=10
         )
 
-        # 这里应该实际发送验证码（邮件或短信）
-        # 开发环境直接返回验证码
+        # 发送验证码
+        send_success = False
+
+        if request.account_type == "email":
+            # 发送邮件验证码
+            send_success = email_service.send_verification_code(
+                to_email=request.account,
+                code=verification_code.code,
+                purpose=request.purpose,
+                expires_minutes=10
+            )
+        elif request.account_type == "phone":
+            # 发送短信验证码
+            send_success = sms_service.send_verification_code(
+                phone=request.account,
+                code=verification_code.code,
+                purpose=request.purpose,
+                expires_minutes=10
+            )
+
+        # 开发环境：即使发送失败也返回成功（用于测试）
         if settings.DEVELOPMENT:
+            print(f"🔐 [开发环境] 验证码: {verification_code.code}")
             return {
-                "message": f"验证码已发送到您的{'邮箱' if request.account_type == 'email' else '手机'}",
-                "expires_in": 600  # 10分钟
-            }
-        else:
-            # 生产环境发送邮件/短信
-            # TODO: 实现邮件/短信发送功能
-            return {
-                "message": f"验证码已发送到您的{'邮箱' if request.account_type == 'email' else '手机'}",
-                "expires_in": 600
+                "message": f"验证码已发送到您的{'邮箱' if request.account_type == 'email' else '手机'}（开发环境：{verification_code.code}）",
+                "expires_in": 600,
+                "code": verification_code.code  # 开发环境返回验证码
             }
 
+        # 生产环境：检查发送结果
+        if not send_success:
+            # 发送失败，标记验证码为已使用
+            verification_code.is_used = True
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"发送{'邮件' if request.account_type == 'email' else '短信'}失败，请稍后重试"
+            )
+
+        return {
+            "message": f"验证码已发送到您的{'邮箱' if request.account_type == 'email' else '手机'}",
+            "expires_in": 600
+        }
+
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
+        print(f"❌ 发送验证码异常: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="发送验证码失败"
+            detail="发送验证码失败，请稍后重试"
         )
 
 

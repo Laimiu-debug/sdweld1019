@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react'
 import {
-  Table,
   Card,
   Button,
   Space,
@@ -15,12 +14,12 @@ import {
   Row,
   Col,
   Popconfirm,
-  Badge,
   Statistic,
   Progress,
-  Dropdown,
   Empty,
   Alert,
+  Divider,
+  Spin,
 } from 'antd'
 import {
   PlusOutlined,
@@ -30,22 +29,23 @@ import {
   EyeOutlined,
   DownloadOutlined,
   ExclamationCircleOutlined,
-  FilterOutlined,
   ReloadOutlined,
   FileTextOutlined,
-  MoreOutlined,
   CopyOutlined,
-  UploadOutlined,
-  FilePdfOutlined,
-  FileExcelOutlined,
-  ExportOutlined,
-  PrinterOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  SendOutlined,
+  RollbackOutlined,
+  ClockCircleOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import { WPSRecord, WPSStatus, PaginatedResponse } from '@/types'
 import { useAuthStore } from '@/store/authStore'
+import wpsService, { WPSSummary } from '@/services/wps'
+import { approvalApi } from '@/services/approval'
+import ApprovalButton from '@/components/Approval/ApprovalButton'
 
 const { Title, Text } = Typography
 const { Search } = Input
@@ -55,7 +55,6 @@ const { Option } = Select
 const WPSList: React.FC = () => {
   const navigate = useNavigate()
   const { checkPermission, canCreateMore, user } = useAuthStore()
-  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [searchText, setSearchText] = useState('')
   const [statusFilter, setStatusFilter] = useState<WPSStatus | ''>('')
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null)
@@ -64,20 +63,48 @@ const WPSList: React.FC = () => {
     pageSize: 20,
     total: 0,
   })
+  const [previewRecord, setPreviewRecord] = useState<WPSRecord | null>(null)
+  const [previewModalVisible, setPreviewModalVisible] = useState(false)
+  const [statusModalVisible, setStatusModalVisible] = useState(false)
+  const [currentRecord, setCurrentRecord] = useState<WPSRecord | null>(null)
+  const [statusAction, setStatusAction] = useState<'submit' | 'approve' | 'reject' | 'withdraw'>('submit')
+
+  // 从 modules_data 中提取关键字段
+  const extractKeyFieldsFromModules = (modulesData: any) => {
+    const extracted = {
+      welding_process: '',
+      base_material: '',
+      filler_material: '',
+    }
+
+    if (!modulesData) return extracted
+
+    // 遍历 modules_data，提取关键字段
+    Object.values(modulesData).forEach((module: any) => {
+      if (module && module.data) {
+        // 优先使用 modules_data 中的数据
+        extracted.welding_process = module.data.welding_process || extracted.welding_process
+        extracted.base_material = module.data.base_material_spec || module.data.base_material || extracted.base_material
+        extracted.filler_material = module.data.filler_material_classification || module.data.filler_material || extracted.filler_material
+      }
+    })
+
+    return extracted
+  }
 
   // 计算WPS统计数据
-  const getWPSStats = (data: WPSRecord[] = []) => {
+  const getWPSStats = (data: WPSSummary[] = []) => {
     const stats = {
       total: data.length,
       approved: data.filter(item => item.status === 'approved').length,
       review: data.filter(item => item.status === 'review').length,
       draft: data.filter(item => item.status === 'draft').length,
-      highPriority: data.filter(item => item.priority === 'high' || item.priority === 'urgent').length,
+      highPriority: 0, // 后端暂时没有priority字段
     }
     return stats
   }
 
-  // 模拟API调用
+  // 调用实际API
   const fetchWPSList = async ({
     page = 1,
     pageSize = 20,
@@ -91,100 +118,74 @@ const WPSList: React.FC = () => {
     status?: WPSStatus | ''
     dateRange?: [dayjs.Dayjs, dayjs.Dayjs] | null
   }) => {
-    // 这里应该调用实际的API
-    // 模拟数据
-    const mockData: WPSRecord[] = [
-      {
-        id: '1',
-        wps_number: 'WPS-2024-001',
-        title: '碳钢管道对接焊工艺',
-        status: 'approved',
-        priority: 'normal',
-        standard: 'AWS D1.1',
-        base_material: 'Q235',
-        filler_material: 'E7018',
-        welding_process: 'SMAW',
-        joint_type: 'Butt Joint',
-        welding_position: '1G',
-        created_at: '2024-01-15T10:30:00Z',
-        updated_at: '2024-01-15T10:30:00Z',
-        user_id: 'user1',
-        view_count: 25,
-        download_count: 5,
-      },
-      {
-        id: '2',
-        wps_number: 'WPS-2024-002',
-        title: '不锈钢容器角焊缝工艺',
-        status: 'review',
-        priority: 'high',
-        standard: 'ASME Section IX',
-        base_material: '304',
-        filler_material: 'ER308L',
-        welding_process: 'GTAW',
-        joint_type: 'T-Joint',
-        welding_position: '2F',
-        created_at: '2024-01-14T15:20:00Z',
-        updated_at: '2024-01-15T09:10:00Z',
-        user_id: 'user1',
-        view_count: 18,
-        download_count: 2,
-      },
-      {
-        id: '3',
-        wps_number: 'WPS-2024-003',
-        title: '铝合金薄板对接焊工艺',
-        status: 'draft',
-        priority: 'low',
-        standard: 'ISO 15614-1',
-        base_material: '5052',
-        filler_material: 'ER5356',
-        welding_process: 'GMAW',
-        joint_type: 'Butt Joint',
-        welding_position: 'PA',
-        created_at: '2024-01-13T08:45:00Z',
-        updated_at: '2024-01-13T08:45:00Z',
-        user_id: 'user1',
-        view_count: 5,
-        download_count: 0,
-      },
-    ]
-
-    // 模拟过滤
-    let filteredData = mockData
-    if (search) {
-      filteredData = filteredData.filter(item =>
-        item.wps_number.toLowerCase().includes(search.toLowerCase()) ||
-        item.title.toLowerCase().includes(search.toLowerCase())
-      )
-    }
-    if (status) {
-      filteredData = filteredData.filter(item => item.status === status)
-    }
-    if (dateRange) {
-      filteredData = filteredData.filter(item => {
-        const itemDate = dayjs(item.created_at)
-        return itemDate.isAfter(dateRange[0]) && itemDate.isBefore(dateRange[1])
+    try {
+      const skip = (page - 1) * pageSize
+      const data = await wpsService.getWPSList({
+        skip,
+        limit: pageSize,
+        status: status || undefined,
+        search_term: search || undefined,
       })
-    }
 
-    // 模拟分页
-    const total = filteredData.length
-    const startIndex = (page - 1) * pageSize
-    const endIndex = startIndex + pageSize
-    const items = filteredData.slice(startIndex, endIndex)
+      // 转换为前端需要的格式
+      const items = data.map(item => {
+        // 优先从 modules_data 中提取数据
+        const moduleFields = extractKeyFieldsFromModules(item.modules_data)
 
-    return {
-      success: true,
-      data: {
-        items,
-        total,
-        page,
-        page_size: pageSize,
-        total_pages: Math.ceil(total / pageSize),
-        has_next: page < Math.ceil(total / pageSize),
-        has_prev: page > 1,
-      },
+        return {
+          id: item.id.toString(),
+          wps_number: item.wps_number,
+          title: item.title,
+          status: item.status as WPSStatus,
+          priority: 'normal' as const, // 默认值
+          standard: item.company || '',
+          base_material: moduleFields.base_material || item.base_material_spec || '',
+          filler_material: moduleFields.filler_material || item.filler_material_classification || '',
+          welding_process: moduleFields.welding_process || item.welding_process || '',
+          joint_type: '',
+          welding_position: '',
+          created_at: item.created_at,
+          updated_at: item.updated_at,
+          user_id: 'current',
+          view_count: 0,
+          download_count: 0,
+          // 审批相关字段
+          approval_instance_id: item.approval_instance_id,
+          approval_status: item.approval_status,
+          workflow_name: item.workflow_name,
+          can_approve: item.can_approve,
+          can_submit_approval: item.can_submit_approval,
+          submitter_id: item.submitter_id,
+        }
+      })
+
+      return {
+        success: true,
+        data: {
+          items,
+          total: items.length, // 注意：后端需要返回total count
+          page,
+          page_size: pageSize,
+          total_pages: Math.ceil(items.length / pageSize),
+          has_next: items.length === pageSize,
+          has_prev: page > 1,
+        },
+      }
+    } catch (error) {
+      console.error('获取WPS列表失败:', error)
+      message.error('获取WPS列表失败')
+      return {
+        success: false,
+        data: {
+          items: [],
+          total: 0,
+          page,
+          page_size: pageSize,
+          total_pages: 0,
+          has_next: false,
+          has_prev: false,
+        },
+      }
     }
   }
 
@@ -213,115 +214,284 @@ const WPSList: React.FC = () => {
     },
   })
 
-  // 表格列配置
-  const columns = [
-    {
-      title: 'WPS编号',
-      dataIndex: 'wps_number',
-      key: 'wps_number',
-      width: 150,
-      render: (text: string, record: WPSRecord) => (
-        <Button type="link" onClick={() => navigate(`/wps/${record.id}`)}>
-          {text}
-        </Button>
-      ),
-    },
-    {
-      title: '标题',
-      dataIndex: 'title',
-      key: 'title',
-      ellipsis: true,
-    },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 100,
-      render: (status: WPSStatus) => {
-        const statusConfig = {
-          draft: { color: 'default', text: '草稿' },
-          review: { color: 'processing', text: '审核中' },
-          approved: { color: 'success', text: '已批准' },
-          rejected: { color: 'error', text: '已拒绝' },
-          archived: { color: 'default', text: '已归档' },
-          obsolete: { color: 'warning', text: '已过时' },
-        }
-        const config = statusConfig[status] || statusConfig.draft
-        return <Tag color={config.color}>{config.text}</Tag>
-      },
-    },
-    {
-      title: '优先级',
-      dataIndex: 'priority',
-      key: 'priority',
-      width: 100,
-      render: (priority: string) => {
-        const priorityConfig = {
-          low: { color: 'default', text: '低' },
-          normal: { color: 'blue', text: '普通' },
-          high: { color: 'orange', text: '高' },
-          urgent: { color: 'red', text: '紧急' },
-        }
-        const config = priorityConfig[priority] || priorityConfig.normal
-        return <Tag color={config.color}>{config.text}</Tag>
-      },
-    },
-    {
-      title: '标准',
-      dataIndex: 'standard',
-      key: 'standard',
-      width: 120,
-      ellipsis: true,
-    },
-    {
-      title: '母材',
-      dataIndex: 'base_material',
-      key: 'base_material',
-      width: 100,
-    },
-    {
-      title: '焊接方法',
-      dataIndex: 'welding_process',
-      key: 'welding_process',
-      width: 120,
-    },
-    {
-      title: '创建时间',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      width: 120,
-      render: (date: string) => dayjs(date).format('YYYY-MM-DD'),
-    },
-    {
-      title: '操作',
-      key: 'actions',
-      width: 180,
-      render: (_, record: WPSRecord) => (
-        <Space>
-          <Tooltip title="查看">
+  // 获取状态配置
+  const getStatusConfig = (status: WPSStatus) => {
+    const statusConfig = {
+      draft: { color: 'default', text: '草稿' },
+      review: { color: 'processing', text: '审核中' },
+      approved: { color: 'success', text: '已批准' },
+      rejected: { color: 'error', text: '已拒绝' },
+      archived: { color: 'default', text: '已归档' },
+      obsolete: { color: 'warning', text: '已过时' },
+    }
+    return statusConfig[status] || statusConfig.draft
+  }
+
+  // 渲染WPS卡片
+  const renderWPSCard = (record: WPSRecord) => (
+    <Card
+      key={record.id}
+      className="wps-card"
+      hoverable
+      style={{ marginBottom: 16 }}
+      cover={
+        <div style={{ padding: '16px', backgroundColor: '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
+          <Row justify="space-between" align="middle">
+            <Col>
+              <Space direction="vertical" size={0}>
+                <Text strong style={{ fontSize: 16 }}>
+                  {record.wps_number}
+                </Text>
+                <Text type="secondary" ellipsis style={{ maxWidth: 300 }}>
+                  {record.title}
+                </Text>
+              </Space>
+            </Col>
+            <Col>
+              <Space direction="vertical" size={4} align="end">
+                <Space>
+                  <Tag color={getStatusConfig(record.status as WPSStatus).color}>
+                    {getStatusConfig(record.status as WPSStatus).text}
+                  </Tag>
+                  {record.approval_status && (
+                    <Tag
+                      color={
+                        record.approval_status === 'approved'
+                          ? 'success'
+                          : record.approval_status === 'rejected'
+                          ? 'error'
+                          : record.approval_status === 'pending' || record.approval_status === 'in_progress'
+                          ? 'processing'
+                          : 'default'
+                      }
+                      icon={
+                        record.approval_status === 'approved' ? (
+                          <CheckCircleOutlined />
+                        ) : record.approval_status === 'rejected' ? (
+                          <CloseCircleOutlined />
+                        ) : record.approval_status === 'pending' || record.approval_status === 'in_progress' ? (
+                          <ClockCircleOutlined />
+                        ) : null
+                      }
+                    >
+                      {record.approval_status === 'approved'
+                        ? '已批准'
+                        : record.approval_status === 'rejected'
+                        ? '已拒绝'
+                        : record.approval_status === 'pending'
+                        ? '待审批'
+                        : record.approval_status === 'in_progress'
+                        ? '审批中'
+                        : record.approval_status}
+                    </Tag>
+                  )}
+                </Space>
+                {record.workflow_name && (
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    工作流: {record.workflow_name}
+                  </Text>
+                )}
+              </Space>
+            </Col>
+          </Row>
+        </div>
+      }
+    >
+      <Space direction="vertical" style={{ width: '100%' }} size="small">
+        <Row justify="space-between">
+          <Col>
+            <Text type="secondary">焊接方法:</Text>
+            <Text style={{ marginLeft: 8 }}>{record.welding_process || '-'}</Text>
+          </Col>
+          <Col>
+            <Text type="secondary">标准:</Text>
+            <Text style={{ marginLeft: 8 }}>{record.standard || '-'}</Text>
+          </Col>
+        </Row>
+        <Row justify="space-between">
+          <Col>
+            <Text type="secondary">母材:</Text>
+            <Text style={{ marginLeft: 8 }}>{record.base_material || '-'}</Text>
+          </Col>
+          <Col>
+            <Text type="secondary">创建时间:</Text>
+            <Text style={{ marginLeft: 8 }}>{dayjs(record.created_at).format('YYYY-MM-DD')}</Text>
+          </Col>
+        </Row>
+      </Space>
+
+      <Divider style={{ margin: '12px 0' }} />
+
+      {/* 审批状态操作按钮 */}
+      {record.status === 'draft' && (
+        <Alert
+          message="草稿状态"
+          description="此WPS处于草稿状态，可以提交审批"
+          type="info"
+          showIcon
+          icon={<ClockCircleOutlined />}
+          style={{ marginBottom: 12 }}
+          action={
             <Button
-              type="text"
+              size="small"
+              type="primary"
+              icon={<SendOutlined />}
+              onClick={() => handleSubmitApproval(record)}
+            >
+              提交审批
+            </Button>
+          }
+        />
+      )}
+
+      {record.status === 'review' && (
+        <Alert
+          message="审核中"
+          description="此WPS正在审核中，等待审批"
+          type="warning"
+          showIcon
+          icon={<ClockCircleOutlined />}
+          style={{ marginBottom: 12 }}
+          action={
+            <Space>
+              {checkPermission('wps.approve') && (
+                <>
+                  <Button
+                    size="small"
+                    type="primary"
+                    icon={<CheckCircleOutlined />}
+                    onClick={() => handleApprove(record)}
+                  >
+                    批准
+                  </Button>
+                  <Button
+                    size="small"
+                    danger
+                    icon={<CloseCircleOutlined />}
+                    onClick={() => handleReject(record)}
+                  >
+                    拒绝
+                  </Button>
+                </>
+              )}
+              <Button
+                size="small"
+                icon={<RollbackOutlined />}
+                onClick={() => handleWithdraw(record)}
+              >
+                撤回
+              </Button>
+            </Space>
+          }
+        />
+      )}
+
+      {record.status === 'approved' && (
+        <Alert
+          message="已批准"
+          description="此WPS已通过审批，可以正式使用"
+          type="success"
+          showIcon
+          icon={<CheckCircleOutlined />}
+          style={{ marginBottom: 12 }}
+        />
+      )}
+
+      {record.status === 'rejected' && (
+        <Alert
+          message="已拒绝"
+          description="此WPS审批被拒绝，需要修改后重新提交"
+          type="error"
+          showIcon
+          icon={<CloseCircleOutlined />}
+          style={{ marginBottom: 12 }}
+          action={
+            <Button
+              size="small"
+              type="primary"
+              icon={<SendOutlined />}
+              onClick={() => handleSubmitApproval(record)}
+            >
+              重新提交
+            </Button>
+          }
+        />
+      )}
+
+      {/* 操作按钮 */}
+      <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
+        <Space>
+          <Tooltip title="查看详情">
+            <Button
+              type="primary"
               icon={<EyeOutlined />}
+              size="small"
               onClick={() => navigate(`/wps/${record.id}`)}
-            />
+            >
+              查看
+            </Button>
           </Tooltip>
-          {checkPermission('wps.update') && (
+
+          {checkPermission('wps.update') && record.status !== 'approved' && (
             <Tooltip title="编辑">
               <Button
-                type="text"
                 icon={<EditOutlined />}
+                size="small"
                 onClick={() => navigate(`/wps/${record.id}/edit`)}
-              />
+              >
+                编辑
+              </Button>
             </Tooltip>
           )}
+
+          <Tooltip title="预览">
+            <Button
+              icon={<EyeOutlined />}
+              size="small"
+              onClick={() => handlePreview(record)}
+            >
+              预览
+            </Button>
+          </Tooltip>
+
+          <Tooltip title="复制">
+            <Button
+              icon={<CopyOutlined />}
+              size="small"
+              onClick={() => handleCopy(record)}
+            >
+              复制
+            </Button>
+          </Tooltip>
+
           <Tooltip title="下载">
             <Button
-              type="text"
               icon={<DownloadOutlined />}
+              size="small"
               onClick={() => handleDownload(record)}
-            />
+            >
+              下载
+            </Button>
           </Tooltip>
-          {checkPermission('wps.delete') && (
+
+          {/* 审批按钮 */}
+          <ApprovalButton
+            documentType="wps"
+            documentId={parseInt(record.id)}
+            documentNumber={record.wps_number}
+            documentTitle={record.title}
+            instanceId={record.approval_instance_id}
+            status={record.approval_status || record.status}
+            canSubmit={record.can_submit_approval}
+            canApprove={record.can_approve}
+            canCancel={record.submitter_id === user?.id}
+            onSuccess={refetch}
+            size="small"
+          />
+        </Space>
+
+        <Space>
+          {checkPermission('wps.delete') && record.status !== 'approved' && (
             <Tooltip title="删除">
               <Popconfirm
                 title="确定要删除这个WPS吗？"
@@ -332,17 +502,19 @@ const WPSList: React.FC = () => {
                 cancelText="取消"
               >
                 <Button
-                  type="text"
-                  icon={<DeleteOutlined />}
                   danger
-                />
+                  icon={<DeleteOutlined />}
+                  size="small"
+                >
+                  删除
+                </Button>
               </Popconfirm>
             </Tooltip>
           )}
         </Space>
-      ),
-    },
-  ]
+      </Space>
+    </Card>
+  )
 
   // 处理搜索
   const handleSearch = (value: string) => {
@@ -367,11 +539,6 @@ const WPSList: React.FC = () => {
     setPagination(prev => ({ ...prev, current: page, pageSize }))
   }
 
-  // 处理行选择
-  const onSelectChange = (newSelectedRowKeys: React.Key[]) => {
-    setSelectedRowKeys(newSelectedRowKeys)
-  }
-
   // 处理下载
   const handleDownload = (record: WPSRecord) => {
     message.info(`开始下载 ${record.wps_number}`)
@@ -381,10 +548,11 @@ const WPSList: React.FC = () => {
   // 处理删除
   const handleDelete = async (id: string) => {
     try {
-      // 这里应该调用实际的删除API
+      await wpsService.deleteWPS(parseInt(id))
       message.success('删除成功')
       refetch()
     } catch (error) {
+      console.error('删除WPS失败:', error)
       message.error('删除失败')
     }
   }
@@ -403,213 +571,153 @@ const WPSList: React.FC = () => {
     return quotaMap[membershipTier] || 10
   }
 
+  // 处理预览
+  const handlePreview = (record: WPSRecord) => {
+    setPreviewRecord(record)
+    setPreviewModalVisible(true)
+  }
+
   // 处理复制
-  const handleCopy = (record: WPSRecord) => {
-    navigate(`/wps/create?copyFrom=${record.id}`)
-  }
+  const handleCopy = async (record: WPSRecord) => {
+    try {
+      // 获取完整的 WPS 数据
+      const response = await wpsService.getWPS(parseInt(record.id))
+      if (!response.success || !response.data) {
+        message.error('获取WPS数据失败')
+        return
+      }
 
-  // 处理导出PDF
-  const handleExportPDF = (record: WPSRecord) => {
-    if (!checkPermission('wps.export_pdf')) {
-      message.warning('您的会员等级不支持导出PDF功能')
-      return
-    }
-    message.info(`正在导出 ${record.wps_number} 的PDF文件`)
-    // 这里应该调用实际的导出API
-  }
+      const wpsData = response.data
 
-  // 处理导出Excel
-  const handleExportExcel = (record: WPSRecord) => {
-    if (!checkPermission('wps.export_excel')) {
-      message.warning('您的会员等级不支持导出Excel功能')
-      return
-    }
-    message.info(`正在导出 ${record.wps_number} 的Excel文件`)
-    // 这里应该调用实际的导出API
-  }
+      // 创建新的 WPS 数据
+      const copyData = {
+        ...wpsData,
+        title: `${wpsData.title} (副本)`,
+        wps_number: `${wpsData.wps_number}-COPY-${Date.now()}`,
+        status: 'draft',
+      }
 
-  // 处理打印
-  const handlePrint = (record: WPSRecord) => {
-    message.info(`正在准备打印 ${record.wps_number}`)
-    window.open(`/wps/${record.id}/print`)
-  }
+      // 删除不需要的字段
+      delete (copyData as any).id
+      delete (copyData as any).created_at
+      delete (copyData as any).updated_at
+      delete (copyData as any).created_by
+      delete (copyData as any).updated_by
 
-  // 处理查看历史版本
-  const handleViewHistory = (record: WPSRecord) => {
-    if (!checkPermission('wps.version_control')) {
-      message.warning('您的会员等级不支持版本控制功能')
-      return
-    }
-    Modal.info({
-      title: `${record.wps_number} - 版本历史`,
-      content: (
-        <div>
-          <p>当前版本: {record.version}</p>
-          <p>创建时间: {dayjs(record.created_at).format('YYYY-MM-DD HH:mm')}</p>
-          <p>最后更新: {dayjs(record.updated_at).format('YYYY-MM-DD HH:mm')}</p>
-        </div>
-      ),
-      width: 600,
-    })
-  }
-
-  // 处理导入
-  const handleImport = () => {
-    if (!checkPermission('wps.import')) {
-      message.warning('您的会员等级不支持导入功能')
-      return
-    }
-    Modal.info({
-      title: '导入Excel文件',
-      content: (
-        <div>
-          <p>请选择要导入的Excel文件</p>
-          <p>支持的格式: .xlsx, .xls</p>
-          <p>文件大小限制: 10MB</p>
-        </div>
-      ),
-      width: 600,
-    })
-  }
-
-  // 处理导出全部
-  const handleExportAll = () => {
-    if (!checkPermission('wps.export_all')) {
-      message.warning('您的会员等级不支持批量导出功能')
-      return
-    }
-    message.info('正在导出所有WPS记录')
-  }
-
-  // 处理批量导出
-  const handleBatchExport = () => {
-    if (selectedRowKeys.length === 0) {
-      message.warning('请选择要导出的记录')
-      return
-    }
-    message.info(`正在导出选中的 ${selectedRowKeys.length} 条记录`)
-  }
-
-  // 处理批量删除
-  const handleBatchDelete = () => {
-    if (selectedRowKeys.length === 0) {
-      message.warning('请选择要删除的记录')
-      return
-    }
-    Modal.confirm({
-      title: '批量删除确认',
-      content: `确定要删除选中的 ${selectedRowKeys.length} 条WPS记录吗？删除后将无法恢复。`,
-      okText: '确定删除',
-      cancelText: '取消',
-      okType: 'danger',
-      onOk: () => {
-        message.success('批量删除成功')
-        setSelectedRowKeys([])
+      // 创建新 WPS
+      const createResponse = await wpsService.createWPS(copyData)
+      if (createResponse.success) {
+        message.success('复制成功')
         refetch()
-      },
-    })
+      } else {
+        message.error(createResponse.message || '复制失败')
+      }
+    } catch (error: any) {
+      console.error('复制WPS失败:', error)
+      message.error(error.response?.data?.detail || '复制失败')
+    }
   }
 
-  // 处理批量操作
-  const handleBatchOperation = async (action: string) => {
-    if (selectedRowKeys.length === 0) {
-      message.warning('请选择要操作的记录')
-      return
-    }
+  // 处理提交审批
+  const handleSubmitApproval = (record: WPSRecord) => {
+    setCurrentRecord(record)
+    setStatusAction('submit')
+    setStatusModalVisible(true)
+  }
+
+  // 处理批准
+  const handleApprove = (record: WPSRecord) => {
+    setCurrentRecord(record)
+    setStatusAction('approve')
+    setStatusModalVisible(true)
+  }
+
+  // 处理拒绝
+  const handleReject = (record: WPSRecord) => {
+    setCurrentRecord(record)
+    setStatusAction('reject')
+    setStatusModalVisible(true)
+  }
+
+  // 处理撤回
+  const handleWithdraw = (record: WPSRecord) => {
+    setCurrentRecord(record)
+    setStatusAction('withdraw')
+    setStatusModalVisible(true)
+  }
+
+  // 确认状态变更
+  const handleStatusChange = async (values: any) => {
+    if (!currentRecord) return
 
     try {
-      // 这里应该调用实际的批量操作API
-      message.success(`${action}成功`)
-      setSelectedRowKeys([])
+      let newStatus = ''
+      let statusUpdate: any = {
+        status: '',
+        reason: values.reason || '',
+      }
+
+      switch (statusAction) {
+        case 'submit':
+          // 提交审批：调用审批系统API
+          await approvalApi.submitForApproval({
+            document_type: 'wps',
+            document_ids: [parseInt(currentRecord.id)],
+            notes: values.reason || ''
+          })
+
+          // 更新WPS状态为审核中
+          newStatus = 'review'
+          statusUpdate.status = 'review'
+          await wpsService.updateWPSStatus(parseInt(currentRecord.id), statusUpdate)
+          break
+        case 'approve':
+          newStatus = 'approved'
+          statusUpdate.status = 'approved'
+          statusUpdate.approved_by = user?.id
+          await wpsService.updateWPSStatus(parseInt(currentRecord.id), statusUpdate)
+          break
+        case 'reject':
+          newStatus = 'rejected'
+          statusUpdate.status = 'rejected'
+          statusUpdate.reviewed_by = user?.id
+          await wpsService.updateWPSStatus(parseInt(currentRecord.id), statusUpdate)
+          break
+        case 'withdraw':
+          newStatus = 'draft'
+          statusUpdate.status = 'draft'
+          await wpsService.updateWPSStatus(parseInt(currentRecord.id), statusUpdate)
+          break
+      }
+
+      const actionText = {
+        submit: '提交审批',
+        approve: '批准',
+        reject: '拒绝',
+        withdraw: '撤回',
+      }[statusAction]
+
+      message.success(`${actionText}成功`)
+      setStatusModalVisible(false)
+      setCurrentRecord(null)
       refetch()
-    } catch (error) {
-      message.error(`${action}失败`)
+    } catch (error: any) {
+      console.error('更新状态失败:', error)
+      message.error(error.response?.data?.detail || '操作失败')
     }
   }
 
-  // 行选择配置
-  const rowSelection = {
-    selectedRowKeys,
-    onChange: onSelectChange,
-  }
 
-  // 获取更多操作菜单项
-  const getMoreActions = (record: WPSRecord) => [
-    {
-      key: 'copy',
-      label: '复制WPS',
-      icon: <CopyOutlined />,
-      onClick: () => handleCopy(record),
-    },
-    {
-      key: 'export-pdf',
-      label: '导出PDF',
-      icon: <FilePdfOutlined />,
-      onClick: () => handleExportPDF(record),
-    },
-    {
-      key: 'export-excel',
-      label: '导出Excel',
-      icon: <FileExcelOutlined />,
-      onClick: () => handleExportExcel(record),
-    },
-    {
-      key: 'print',
-      label: '打印',
-      icon: <PrinterOutlined />,
-      onClick: () => handlePrint(record),
-    },
-    {
-      type: 'divider' as const,
-    },
-    {
-      key: 'view-history',
-      label: '查看历史版本',
-      icon: <FileTextOutlined />,
-      onClick: () => handleViewHistory(record),
-    },
-  ]
-
-  // 获取批量操作菜单项
-  const getBatchActions = () => [
-    {
-      key: 'export-selected',
-      label: '导出选中',
-      icon: <ExportOutlined />,
-      onClick: () => handleBatchExport(),
-    },
-    {
-      key: 'delete-selected',
-      label: '删除选中',
-      icon: <DeleteOutlined />,
-      onClick: () => handleBatchDelete(),
-      danger: true,
-    },
-  ]
 
   return (
     <div className="wps-list-container">
-      <div className="page-header">
-        <div className="page-title">
+      <div className="page-header" style={{ justifyContent: 'center' }}>
+        <div className="page-title" style={{ textAlign: 'center' }}>
           <Title level={2}>WPS管理</Title>
           <Text type="secondary">
             焊接工艺规程 (Welding Procedure Specification) 管理
           </Text>
         </div>
-        <Space>
-          <Button
-            icon={<UploadOutlined />}
-            onClick={() => handleImport()}
-          >
-            导入Excel
-          </Button>
-          <Button
-            icon={<ExportOutlined />}
-            onClick={() => handleExportAll()}
-          >
-            导出全部
-          </Button>
-        </Space>
       </div>
 
       {/* 统计卡片 */}
@@ -681,9 +789,9 @@ const WPSList: React.FC = () => {
         )
       })()}
 
-      <Card className="wps-table-card">
+      <Card className="wps-list-card">
         {/* 搜索和筛选区域 */}
-        <Row gutter={[16, 16]} className="search-filters">
+        <Row gutter={[16, 16]} className="search-filters" style={{ marginBottom: 24 }}>
           <Col xs={24} sm={12} md={8}>
             <Search
               placeholder="搜索WPS编号或标题"
@@ -739,52 +847,268 @@ const WPSList: React.FC = () => {
           </Col>
         </Row>
 
-        {/* 批量操作区域 */}
-        {selectedRowKeys.length > 0 && (
-          <Row className="mb-4">
-            <Col span={24}>
-              <Space>
-                <Text>已选择 {selectedRowKeys.length} 项</Text>
-                <Button onClick={() => handleBatchOperation('导出')}>
-                  批量导出
-                </Button>
-                {checkPermission('wps.delete') && (
-                  <Popconfirm
-                    title="确定要删除选中的记录吗？"
-                    description="删除后将无法恢复"
-                    onConfirm={() => handleBatchOperation('删除')}
-                    icon={<ExclamationCircleOutlined style={{ color: 'red' }} />}
-                    okText="确定"
-                    cancelText="取消"
-                  >
-                    <Button danger>批量删除</Button>
-                  </Popconfirm>
-                )}
-              </Space>
-            </Col>
-          </Row>
-        )}
+        {/* 卡片列表区域 */}
+        <Spin spinning={isLoading}>
+          {wpsData?.data?.items && wpsData.data.items.length > 0 ? (
+            <div className="wps-cards-container">
+              {wpsData.data.items.map(record => renderWPSCard(record))}
 
-        {/* 表格区域 */}
-        <Table
-          columns={columns}
-          dataSource={wpsData?.data?.items}
-          rowKey="id"
-          pagination={{
-            current: pagination.current,
-            pageSize: pagination.pageSize,
-            total: pagination.total,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total, range) =>
-              `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
-            onChange: handleTableChange,
-          }}
-          loading={isLoading}
-          rowSelection={rowSelection}
-          scroll={{ x: 1200 }}
-        />
+              {/* 分页信息 */}
+              <Row justify="center" style={{ marginTop: 24 }}>
+                <Text type="secondary">
+                  第 {pagination.current} 页，共 {Math.ceil(pagination.total / pagination.pageSize)} 页
+                  （总计 {pagination.total} 条）
+                </Text>
+              </Row>
+
+              {/* 分页按钮 */}
+              <Row justify="center" gutter={[8, 8]} style={{ marginTop: 16 }}>
+                <Col>
+                  <Button
+                    disabled={pagination.current === 1}
+                    onClick={() => handleTableChange(pagination.current - 1, pagination.pageSize)}
+                  >
+                    上一页
+                  </Button>
+                </Col>
+                <Col>
+                  <Button
+                    disabled={pagination.current >= Math.ceil(pagination.total / pagination.pageSize)}
+                    onClick={() => handleTableChange(pagination.current + 1, pagination.pageSize)}
+                  >
+                    下一页
+                  </Button>
+                </Col>
+                <Col>
+                  <Select
+                    value={pagination.pageSize}
+                    onChange={(value) => handleTableChange(1, value)}
+                    style={{ width: 100 }}
+                  >
+                    <Option value={10}>10条/页</Option>
+                    <Option value={20}>20条/页</Option>
+                    <Option value={50}>50条/页</Option>
+                    <Option value={100}>100条/页</Option>
+                  </Select>
+                </Col>
+              </Row>
+            </div>
+          ) : (
+            <Empty
+              description="暂无WPS记录"
+              style={{ marginTop: 48, marginBottom: 48 }}
+            >
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => navigate('/wps/create')}
+              >
+                创建第一个WPS
+              </Button>
+            </Empty>
+          )}
+        </Spin>
       </Card>
+
+      {/* 预览模态框 */}
+      <Modal
+        title={`预览 - ${previewRecord?.wps_number}`}
+        open={previewModalVisible}
+        onCancel={() => setPreviewModalVisible(false)}
+        width={900}
+        style={{ maxHeight: '90vh' }}
+        styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }}
+        footer={[
+          <Button key="close" onClick={() => setPreviewModalVisible(false)}>
+            关闭
+          </Button>,
+          <Button
+            key="edit"
+            type="primary"
+            onClick={() => {
+              setPreviewModalVisible(false)
+              navigate(`/wps/${previewRecord?.id}/edit`)
+            }}
+          >
+            编辑
+          </Button>,
+        ]}
+      >
+        {previewRecord && (
+          <Space direction="vertical" style={{ width: '100%' }} size="large">
+            {/* 基本信息 */}
+            <div>
+              <Title level={5}>基本信息</Title>
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <div>
+                  <Text strong>WPS编号:</Text>
+                  <Text style={{ marginLeft: 16 }}>{previewRecord.wps_number}</Text>
+                </div>
+                <div>
+                  <Text strong>标题:</Text>
+                  <Text style={{ marginLeft: 16 }}>{previewRecord.title}</Text>
+                </div>
+                <div>
+                  <Text strong>状态:</Text>
+                  <Tag
+                    color={getStatusConfig(previewRecord.status as WPSStatus).color}
+                    style={{ marginLeft: 16 }}
+                  >
+                    {getStatusConfig(previewRecord.status as WPSStatus).text}
+                  </Tag>
+                </div>
+                <div>
+                  <Text strong>焊接方法:</Text>
+                  <Text style={{ marginLeft: 16 }}>{previewRecord.welding_process || '-'}</Text>
+                </div>
+                <div>
+                  <Text strong>母材:</Text>
+                  <Text style={{ marginLeft: 16 }}>{previewRecord.base_material || '-'}</Text>
+                </div>
+                <div>
+                  <Text strong>填充金属:</Text>
+                  <Text style={{ marginLeft: 16 }}>{previewRecord.filler_material || '-'}</Text>
+                </div>
+                <div>
+                  <Text strong>标准:</Text>
+                  <Text style={{ marginLeft: 16 }}>{previewRecord.standard || '-'}</Text>
+                </div>
+                <div>
+                  <Text strong>创建时间:</Text>
+                  <Text style={{ marginLeft: 16 }}>
+                    {dayjs(previewRecord.created_at).format('YYYY-MM-DD HH:mm:ss')}
+                  </Text>
+                </div>
+                <div>
+                  <Text strong>最后更新:</Text>
+                  <Text style={{ marginLeft: 16 }}>
+                    {dayjs(previewRecord.updated_at).format('YYYY-MM-DD HH:mm:ss')}
+                  </Text>
+                </div>
+              </Space>
+            </div>
+
+            {/* 模块数据 */}
+            {previewRecord.modules_data && Object.keys(previewRecord.modules_data).length > 0 && (
+              <div>
+                <Title level={5}>模块数据详情</Title>
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  {Object.entries(previewRecord.modules_data).map(([moduleId, moduleContent]: [string, any]) => (
+                    <Card key={moduleId} size="small" title={moduleContent.customName || moduleContent.moduleId || moduleId}>
+                      <Space direction="vertical" style={{ width: '100%' }}>
+                        {moduleContent.data && Object.entries(moduleContent.data).map(([key, value]: [string, any]) => (
+                          <div key={key}>
+                            <Text strong>{key}:</Text>
+                            <Text style={{ marginLeft: 16 }}>
+                              {typeof value === 'object' ? JSON.stringify(value) : String(value || '-')}
+                            </Text>
+                          </div>
+                        ))}
+                      </Space>
+                    </Card>
+                  ))}
+                </Space>
+              </div>
+            )}
+          </Space>
+        )}
+      </Modal>
+
+      {/* 状态变更模态框 */}
+      <Modal
+        title={
+          statusAction === 'submit' ? '提交审批' :
+          statusAction === 'approve' ? '批准WPS' :
+          statusAction === 'reject' ? '拒绝WPS' :
+          '撤回审批'
+        }
+        open={statusModalVisible}
+        onCancel={() => {
+          setStatusModalVisible(false)
+          setCurrentRecord(null)
+        }}
+        onOk={() => {
+          Modal.confirm({
+            title: '确认操作',
+            content: `确定要${
+              statusAction === 'submit' ? '提交审批' :
+              statusAction === 'approve' ? '批准' :
+              statusAction === 'reject' ? '拒绝' :
+              '撤回'
+            }这个WPS吗？`,
+            onOk: () => {
+              handleStatusChange({
+                reason: (document.getElementById('status-reason') as HTMLTextAreaElement)?.value || ''
+              })
+            }
+          })
+        }}
+        okText="确认"
+        cancelText="取消"
+      >
+        {currentRecord && (
+          <Space direction="vertical" style={{ width: '100%' }} size="large">
+            <div>
+              <Text strong>WPS编号：</Text>
+              <Text>{currentRecord.wps_number}</Text>
+            </div>
+            <div>
+              <Text strong>标题：</Text>
+              <Text>{currentRecord.title}</Text>
+            </div>
+            <div>
+              <Text strong>当前状态：</Text>
+              <Tag color={getStatusConfig(currentRecord.status as WPSStatus).color}>
+                {getStatusConfig(currentRecord.status as WPSStatus).text}
+              </Tag>
+            </div>
+            <div>
+              <Text strong>
+                {statusAction === 'submit' ? '提交说明' :
+                 statusAction === 'approve' ? '批准意见' :
+                 statusAction === 'reject' ? '拒绝原因' :
+                 '撤回原因'}
+                ：
+              </Text>
+              <Input.TextArea
+                id="status-reason"
+                rows={4}
+                placeholder={
+                  statusAction === 'submit' ? '请输入提交说明（可选）' :
+                  statusAction === 'approve' ? '请输入批准意见（可选）' :
+                  statusAction === 'reject' ? '请输入拒绝原因' :
+                  '请输入撤回原因（可选）'
+                }
+                style={{ marginTop: 8 }}
+              />
+            </div>
+            {statusAction === 'submit' && (
+              <Alert
+                message="提示"
+                description="提交后，WPS将进入审核流程，需要相关人员审批后才能使用。"
+                type="info"
+                showIcon
+              />
+            )}
+            {statusAction === 'approve' && (
+              <Alert
+                message="提示"
+                description="批准后，WPS将可以正式使用，且不能再编辑。"
+                type="warning"
+                showIcon
+              />
+            )}
+            {statusAction === 'reject' && (
+              <Alert
+                message="提示"
+                description="拒绝后，WPS将返回草稿状态，需要修改后重新提交。"
+                type="error"
+                showIcon
+              />
+            )}
+          </Space>
+        )}
+      </Modal>
     </div>
   )
 }

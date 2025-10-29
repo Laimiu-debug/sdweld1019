@@ -6,6 +6,7 @@ from datetime import datetime, date
 
 from sqlalchemy.orm import Mapped, relationship
 from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, Date, ForeignKey
+from sqlalchemy.dialects.postgresql import JSONB
 
 from app.core.database import Base
 
@@ -30,9 +31,16 @@ class PPQR(Base):
     # 基本信息
     ppqr_number = Column(String(50), unique=True, index=True, nullable=False, comment="pPQR编号")
     title = Column(String(200), nullable=False, comment="标题")
+    revision = Column(String(10), default="A", comment="版本号")
     status = Column(String(20), default="draft", comment="状态: draft, testing, completed, converted")
     planned_test_date = Column(Date, comment="计划测试日期")
     actual_test_date = Column(Date, comment="实际测试日期")
+
+    # 模板和模块数据
+    # 修改为外键 + SET NULL：当模板被删除时，已创建的pPQR文档应该保持可编辑
+    # template_id 设为 NULL 表示模板已被删除，但文档数据仍然完整保存在 module_data 中
+    template_id = Column(String(100), ForeignKey('wps_templates.id', ondelete='SET NULL'), nullable=True, index=True, comment="使用的模板ID（可为空，模板删除后自动设为NULL）")
+    module_data = Column(JSONB, comment="模块数据(JSON)")
 
     # 关联信息
     company = Column(String(100), comment="公司名称")
@@ -40,7 +48,8 @@ class PPQR(Base):
     test_location = Column(String(100), comment="试验地点")
     
     # 试验目的和方案
-    purpose = Column(Text, comment="试验目的")
+    test_purpose = Column(Text, comment="试验目的")
+    purpose = Column(Text, comment="试验目的（别名）")
     test_plan = Column(Text, comment="试验方案")
     expected_results = Column(Text, comment="预期结果")
 
@@ -119,6 +128,7 @@ class PPQR(Base):
     # 试验结果
     is_successful = Column(Boolean, comment="试验是否成功")
     test_result_summary = Column(Text, comment="试验结果摘要")
+    test_conclusion = Column(String(50), comment="试验结论: qualified/failed/pending")
     
     # 目视检验
     visual_inspection_result = Column(String(20), comment="目视检测结果: pass/fail")
@@ -149,6 +159,7 @@ class PPQR(Base):
     parent_ppqr_id = Column(Integer, ForeignKey("ppqr.id"), comment="父pPQR ID（用于对比试验）")
 
     # 转换信息
+    convert_to_pqr = Column(Boolean, default=False, comment="是否已转换为PQR（别名）")
     converted_to_pqr = Column(Boolean, default=False, comment="是否已转换为PQR")
     converted_to_pqr_id = Column(Integer, ForeignKey("pqr.id"), comment="转换后的PQR ID")
     converted_at = Column(DateTime, comment="转换时间")

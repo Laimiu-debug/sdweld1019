@@ -89,12 +89,9 @@ const UserDetail: React.FC = () => {
     setError(null);
 
     try {
-      const response = await apiService.getUserDetail(userId);
-      if (response.success) {
-        setUser(response.data);
-      } else {
-        setError('获取用户详情失败');
-      }
+      // API拦截器会自动提取data字段，所以这里直接接收用户数据对象
+      const userData = await apiService.getUserDetail(userId);
+      setUser(userData);
     } catch (error: any) {
       console.error('获取用户详情失败:', error);
       setError(error.message || '获取用户详情失败');
@@ -120,19 +117,17 @@ const UserDetail: React.FC = () => {
     if (!user) return;
 
     try {
-      const response = await apiService.adjustUserMembership(user.id, {
+      // API拦截器会自动提取data字段，所以这里直接接收data对象
+      await apiService.adjustUserMembership(user.id, {
         membership_tier: values.membership_tier,
         expires_at: values.subscription_expires_at?.format('YYYY-MM-DD'),
         reason: `管理员手动编辑用户信息`,
       });
 
-      if (response.success) {
-        message.success('用户信息更新成功');
-        setEditModalVisible(false);
-        loadUserDetail(); // 重新加载数据
-      } else {
-        message.error('更新用户信息失败');
-      }
+      // 请求成功
+      message.success('用户信息更新成功');
+      setEditModalVisible(false);
+      loadUserDetail(); // 重新加载数据
     } catch (error: any) {
       console.error('更新用户信息失败:', error);
       message.error(error.message || '更新用户信息失败');
@@ -148,20 +143,18 @@ const UserDetail: React.FC = () => {
     if (!user) return;
 
     try {
-      const response = await apiService.toggleUserStatus(
+      // API拦截器会自动提取data字段，所以这里直接接收data对象
+      await apiService.toggleUserStatus(
         user.id,
         statusAction === 'enable',
         values.reason
       );
 
-      if (response.success) {
-        message.success(`用户已${statusAction === 'enable' ? '启用' : '禁用'}`);
-        setStatusModalVisible(false);
-        statusForm.resetFields();
-        loadUserDetail(); // 重新加载数据
-      } else {
-        message.error(`${statusAction === 'enable' ? '启用' : '禁用'}用户失败`);
-      }
+      // 请求成功
+      message.success(`用户已${statusAction === 'enable' ? '启用' : '禁用'}`);
+      setStatusModalVisible(false);
+      statusForm.resetFields();
+      loadUserDetail(); // 重新加载数据
     } catch (error: any) {
       console.error(`${statusAction === 'enable' ? '启用' : '禁用'}用户失败:`, error);
       message.error(error.message || `${statusAction === 'enable' ? '启用' : '禁用'}用户失败`);
@@ -172,14 +165,12 @@ const UserDetail: React.FC = () => {
     if (!user) return;
 
     try {
-      const response = await apiService.deleteUser(user.id);
+      // API拦截器会自动提取data字段，所以这里直接接收data对象
+      await apiService.deleteUser(user.id);
 
-      if (response.success) {
-        message.success('用户删除成功');
-        navigate('/users'); // 返回用户列表
-      } else {
-        message.error('删除用户失败');
-      }
+      // 请求成功
+      message.success('用户删除成功');
+      navigate('/users'); // 返回用户列表
     } catch (error: any) {
       console.error('删除用户失败:', error);
       message.error(error.message || '删除用户失败');

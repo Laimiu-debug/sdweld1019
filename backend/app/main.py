@@ -32,7 +32,37 @@ app = FastAPI(
     redoc_url=f"{settings.API_V1_STR}/redoc",
 )
 
-# 设置CORS中间件
+# 添加一个调试端点来测试CORS
+@app.get("/api/v1/debug/cors-test")
+async def cors_test():
+    """CORS测试端点"""
+    return {
+        "message": "CORS test successful",
+        "timestamp": "2025-10-22T13:59:00Z",
+        "development": settings.DEVELOPMENT
+    }
+
+
+# 请求处理时间中间件
+@app.middleware("http")
+async def add_process_time_header(request: Request, call_next):
+    """添加请求处理时间头."""
+    start_time = time.time()
+    response = await call_next(request)
+    process_time = time.time() - start_time
+    response.headers["X-Process-Time"] = str(process_time)
+    return response
+
+
+# 设置可信主机中间件（生产环境）
+if not settings.DEVELOPMENT:
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=["yourdomain.com", "*.yourdomain.com"]
+    )
+
+
+# 设置CORS中间件 - 必须最后添加，这样它会最先执行
 # 在开发环境下使用更宽松的CORS配置
 if settings.DEVELOPMENT:
     app.add_middleware(
@@ -54,30 +84,32 @@ else:
     )
     logger.info(f"CORS middleware configured for PRODUCTION (allowed origins: {settings.ALLOWED_ORIGINS})")
 
-# 设置可信主机中间件（生产环境）
-if not settings.DEVELOPMENT:
-    app.add_middleware(
-        TrustedHostMiddleware,
-        allowed_hosts=["yourdomain.com", "*.yourdomain.com"]
-    )
-
-
-# 请求处理时间中间件
-@app.middleware("http")
-async def add_process_time_header(request: Request, call_next):
-    """添加请求处理时间头."""
-    start_time = time.time()
-    response = await call_next(request)
-    process_time = time.time() - start_time
-    response.headers["X-Process-Time"] = str(process_time)
-    return response
-
 
 # 全局异常处理
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """全局异常处理器."""
-    logger.error(f"Global exception: {exc}", exc_info=True)
+    import traceback
+
+    logger.error(f"=== 全局异常处理器被触发 ===")
+    logger.error(f"请求路径: {request.url}")
+    logger.error(f"请求方法: {request.method}")
+    logger.error(f"异常类型: {type(exc).__name__}")
+    logger.error(f"异常信息: {str(exc)}")
+    logger.error(f"异常堆栈: {traceback.format_exc()}")
+
+    # 如果有认证头，也记录下来
+    auth_header = request.headers.get("authorization")
+    if auth_header:
+        logger.error(f"认证头: {auth_header[:20]}...")  # 只记录前20个字符
+
+    # 记录请求体（如果有的话）
+    try:
+        body = await request.body()
+        if body:
+            logger.error(f"请求体: {body[:500]}...")  # 只记录前500个字符
+    except Exception as body_error:
+        logger.error(f"读取请求体失败: {body_error}")
 
     if settings.DEVELOPMENT:
         return JSONResponse(
@@ -87,6 +119,7 @@ async def global_exception_handler(request: Request, exc: Exception):
                 "error": str(exc),
                 "type": type(exc).__name__,
                 "path": str(request.url),
+                "traceback": traceback.format_exc()
             }
         )
     else:
@@ -94,6 +127,27 @@ async def global_exception_handler(request: Request, exc: Exception):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"detail": "Internal server error"}
         )
+
+# 添加请求体异常处理
+@app.exception_handler(Exception)
+async def request_body_exception_handler(request: Request, exc: Exception):
+    """请求体异常处理器."""
+    logger.error(f"Request body exception: {exc}", exc_info=True)
+
+    if "JSON" in str(exc) or "body" in str(exc):
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "detail": f"Invalid request body format: {str(exc)}",
+                "error": "JSON parsing error",
+                "type": type(exc).__name__,
+            }
+        )
+
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "Internal server error"}
+    )
 
 
 # 启动事件

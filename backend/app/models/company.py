@@ -26,6 +26,7 @@ class Company(Base):
     max_employees = Column(Integer, default=10)
     max_wps_records = Column(Integer, default=200)
     max_pqr_records = Column(Integer, default=200)
+    max_ppqr_records = Column(Integer, default=200)
     
     # 企业信息
     business_license = Column(String(255))
