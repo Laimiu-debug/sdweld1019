@@ -33,10 +33,10 @@ const PQRCreate = React.lazy(() => import('@/pages/PQR/PQRCreate'))
 const PQREdit = React.lazy(() => import('@/pages/PQR/PQREdit'))
 const PQRDetail = React.lazy(() => import('@/pages/PQR/PQRDetail'))
 
-const PPQRList = React.lazy(() => import('@/pages/pPQR/PPQRList'))
+const PPQRList = React.lazy(() => import('@/pages/pPQR/pPQRList'))
 const PPQRCreate = React.lazy(() => import('@/pages/pPQR/PPQRCreate'))
 const PPQREdit = React.lazy(() => import('@/pages/pPQR/PPQREdit'))
-const PPQRDetail = React.lazy(() => import('@/pages/pPQR/PPQRDetail'))
+const PPQRDetail = React.lazy(() => import('@/pages/pPQR/pPQRDetail'))
 
 const MaterialsList = React.lazy(() => import('@/pages/Materials/MaterialsList'))
 const MaterialsCreate = React.lazy(() => import('@/pages/Materials/MaterialsCreate'))

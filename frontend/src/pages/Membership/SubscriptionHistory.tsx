@@ -474,7 +474,6 @@ const SubscriptionHistory: React.FC = () => {
             <Statistic
               title="总消费"
               value={stats.totalAmount}
-              prefix={<CreditCardOutlined />}
               precision={2}
               valueStyle={{ color: '#fa8c16' }}
               prefix="¥"
@@ -486,7 +485,6 @@ const SubscriptionHistory: React.FC = () => {
             <Statistic
               title="平均消费"
               value={stats.averageAmount}
-              prefix={<BarChartOutlined />}
               valueStyle={{ color: '#722ed1' }}
               prefix="¥"
             />
