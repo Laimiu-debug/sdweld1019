@@ -1,5 +1,5 @@
-# 构建阶段
-FROM node:18-alpine AS builder
+# 构建阶段 - 使用阿里云镜像
+FROM registry.cn-hangzhou.aliyuncs.com/library/node:18-alpine AS builder
 
 # 设置工作目录
 WORKDIR /app
@@ -23,8 +23,8 @@ ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 # 构建应用
 RUN npm run build
 
-# 生产阶段
-FROM nginx:alpine
+# 生产阶段 - 使用阿里云镜像
+FROM registry.cn-hangzhou.aliyuncs.com/library/nginx:alpine
 
 # 从构建阶段复制构建产物
 COPY --from=builder /app/dist /usr/share/nginx/html

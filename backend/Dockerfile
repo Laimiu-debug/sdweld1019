@@ -1,5 +1,5 @@
-# 使用官方 Python 3.11 镜像
-FROM python:3.11-slim
+# 使用阿里云的 Python 3.11 镜像（国内访问更快）
+FROM registry.cn-hangzhou.aliyuncs.com/library/python:3.11-slim
 
 # 设置工作目录
 WORKDIR /app

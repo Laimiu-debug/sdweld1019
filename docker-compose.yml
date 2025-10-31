@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # PostgreSQL 数据库
   postgres:
-    image: postgres:15-alpine
+    image: registry.cn-hangzhou.aliyuncs.com/library/postgres:15-alpine
     container_name: weld_postgres
     restart: always
     environment:
@@ -27,7 +27,7 @@ services:
 
   # Redis 缓存
   redis:
-    image: redis:7-alpine
+    image: registry.cn-hangzhou.aliyuncs.com/library/redis:7-alpine
     container_name: weld_redis
     restart: always
     command: redis-server --requirepass Redis@2024#Strong!Key --appendonly yes
@@ -105,7 +105,7 @@ services:
 
   # Nginx 反向代理和静态文件服务
   nginx:
-    image: nginx:alpine
+    image: registry.cn-hangzhou.aliyuncs.com/library/nginx:alpine
     container_name: weld_nginx
     restart: always
     ports:
@@ -134,7 +134,7 @@ services:
 
   # Certbot - 自动申请和续期 SSL 证书
   certbot:
-    image: certbot/certbot
+    image: registry.cn-hangzhou.aliyuncs.com/library/certbot:latest
     container_name: weld_certbot
     volumes:
       - ./nginx/certbot/conf:/etc/letsencrypt
