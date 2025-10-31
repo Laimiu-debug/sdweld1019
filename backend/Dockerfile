@@ -10,8 +10,14 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# 强制替换所有 Debian 源为中科大镜像（加速下载）
+RUN rm -f /etc/apt/sources.list.d/debian.sources && \
+    echo "deb http://mirrors.ustc.edu.cn/debian/ trixie main contrib non-free non-free-firmware" > /etc/apt/sources.list && \
+    echo "deb http://mirrors.ustc.edu.cn/debian/ trixie-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
+    echo "deb http://mirrors.ustc.edu.cn/debian-security trixie-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list
+
 # 安装系统依赖
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     libpq-dev \
@@ -21,9 +27,11 @@ RUN apt-get update && apt-get install -y \
 # 复制依赖文件
 COPY requirements.txt .
 
-# 安装 Python 依赖
-RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+# 安装 Python 依赖（使用阿里云 PyPI 镜像加速）
+RUN pip install --upgrade pip -i https://mirrors.aliyun.com/pypi/simple/ && \
+    pip install --no-cache-dir -r requirements.txt \
+    -i https://mirrors.aliyun.com/pypi/simple/ \
+    --trusted-host mirrors.aliyun.com
 
 # 复制应用代码
 COPY . .

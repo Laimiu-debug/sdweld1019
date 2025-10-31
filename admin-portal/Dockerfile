@@ -4,6 +4,9 @@ FROM node:18-alpine AS builder
 # 设置工作目录
 WORKDIR /app
 
+# 使用淘宝 npm 镜像加速下载
+RUN npm config set registry https://registry.npmmirror.com
+
 # 复制 package 文件
 COPY package*.json ./
 
@@ -20,15 +23,18 @@ ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 # 构建应用
 RUN npm run build
 
-# 生产阶段 - 只保留构建产物
+# 生产阶段
 FROM nginx:alpine
 
 # 从构建阶段复制构建产物
-COPY --from=builder /app/dist /app/dist
+COPY --from=builder /app/dist /usr/share/nginx/html
 
-# 暴露端口（虽然不直接使用，但保留用于文档）
+# 复制 nginx 配置
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# 暴露端口
 EXPOSE 80
 
-# Nginx 会由主 nginx 容器管理，这里只是构建产物容器
-CMD ["echo", "Admin portal build completed"]
+# 启动 nginx
+CMD ["nginx", "-g", "daemon off;"]
 
