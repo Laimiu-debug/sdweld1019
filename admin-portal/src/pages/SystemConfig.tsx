@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card, Form, Switch, InputNumber, Button, Space, message, Row, Col, Divider } from 'antd';
+import { Card, Form, Switch, InputNumber, Button, Space, message, Row, Col } from 'antd';
 import { SaveOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons';
 
 const SystemConfig: React.FC = () => {
@@ -19,12 +19,12 @@ const SystemConfig: React.FC = () => {
     log_retention_days: 30,
   };
 
-  const handleSubmit = async (values: any) => {
+  const handleSubmit = async (_values: any) => {
     try {
       setLoading(true);
       // 模拟API调用
       await new Promise(resolve => setTimeout(resolve, 1000));
-      
+
       message.success('系统配置保存成功');
     } catch (error) {
       message.error('保存失败');

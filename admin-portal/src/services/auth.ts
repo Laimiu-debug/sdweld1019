@@ -114,7 +114,7 @@ class AuthService {
           } catch (error) {
             console.error('Error converting token:', error);
             // 如果转换失败，使用生成的JWT token
-            finalToken = this.generateValidJWTToken(adminData.id?.toString() || '3', adminData.username || 'admin');
+            finalToken = this.generateValidJWTToken(authData.admin.id?.toString() || '3', authData.admin.username || 'admin');
           }
         } else {
           console.log('Token is already in correct JWT format');
@@ -233,7 +233,7 @@ class AuthService {
     const result = !!(token && user);
 
     // 避免在开发环境中过多的日志输出
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.env.DEV) {
       console.log('isAuthenticated() debug:', {
         hasToken: !!token,
         tokenValue: token?.substring(0, 20) + '...',

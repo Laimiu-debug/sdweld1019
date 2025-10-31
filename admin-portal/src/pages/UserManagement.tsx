@@ -20,7 +20,6 @@ import {
 } from 'antd';
 import {
   SearchOutlined,
-  PlusOutlined,
   EditOutlined,
   DeleteOutlined,
   StopOutlined,
@@ -32,7 +31,7 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import apiService from '@/services/api';
-import { User, PaginationParams } from '@/types';
+import { User } from '@/types';
 import dayjs from 'dayjs';
 
 const { Search } = Input;

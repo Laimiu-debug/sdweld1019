@@ -16,7 +16,6 @@ import {
   Row,
   Col,
   Statistic,
-  Divider,
   Popconfirm,
   Select,
 } from 'antd';
@@ -27,7 +26,6 @@ import {
   PlayCircleOutlined,
   DeleteOutlined,
   SaveOutlined,
-  TeamOutlined,
 } from '@ant-design/icons';
 import apiService from '@/services/api';
 import dayjs from 'dayjs';
@@ -49,6 +47,8 @@ interface UserDetailData {
   last_login_at: string;
   phone: string;
   company: string;
+  company_name?: string;
+  is_inherited_from_company?: boolean;
   subscription_expires_at: string;
   quotas: {
     wps_limit: number;

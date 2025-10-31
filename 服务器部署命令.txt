@@ -1,0 +1,39 @@
+# ========================================
+# 在服务器上执行的完整部署命令
+# ========================================
+
+# 步骤 1: 清理并重新克隆
+cd /root
+rm -rf welding-system
+git clone https://github.com/Laimiu-debug/sdweld1019.git welding-system
+
+# 步骤 2: 检查文件
+cd welding-system
+ls -la
+echo "=== 检查关键文件 ==="
+ls -lh deploy.sh
+ls -lh docker-compose.yml
+ls -lh backend/Dockerfile
+
+# 步骤 3: 设置权限
+chmod +x deploy.sh create_default_admin.sh
+
+# 步骤 4: 查看文件内容（确认文件正常）
+head -20 deploy.sh
+
+# 如果上面都正常，退出服务器
+exit
+
+# ========================================
+# 然后在本地执行上传配置文件
+# ========================================
+# 在本地 PowerShell 执行：
+# .\上传敏感配置.ps1
+
+# ========================================
+# 最后回到服务器部署
+# ========================================
+# ssh root@43.142.188.252
+# cd /root/welding-system
+# ./deploy.sh
+
