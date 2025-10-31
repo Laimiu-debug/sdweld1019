@@ -496,4 +496,5 @@ class EnterpriseService {
 // 创建服务实例
 const enterpriseService = new EnterpriseService()
 
+export { enterpriseService }
 export default enterpriseService
