@@ -1,5 +1,5 @@
-# 使用阿里云的 Python 3.11 镜像（国内访问更快）
-FROM registry.cn-hangzhou.aliyuncs.com/library/python:3.11-slim
+# 使用官方 Python 3.11 slim 镜像
+FROM python:3.11-slim
 
 # 设置工作目录
 WORKDIR /app
@@ -11,37 +11,36 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     DEBIAN_FRONTEND=noninteractive
 
-# 配置 APT 使用国内镜像源（阿里云镜像，速度更快更稳定）
-RUN rm -f /etc/apt/sources.list.d/debian.sources && \
-    echo "deb https://mirrors.aliyun.com/debian/ bookworm main contrib non-free non-free-firmware" > /etc/apt/sources.list && \
-    echo "deb https://mirrors.aliyun.com/debian/ bookworm-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
-    echo "deb https://mirrors.aliyun.com/debian-security bookworm-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list
+# 配置国内镜像源加速
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources && \
+    sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources
 
-# 配置 APT 加速选项
-RUN echo 'Acquire::http::Timeout "30";' > /etc/apt/apt.conf.d/99timeout && \
-    echo 'Acquire::ftp::Timeout "30";' >> /etc/apt/apt.conf.d/99timeout && \
-    echo 'Acquire::Retries "3";' >> /etc/apt/apt.conf.d/99timeout && \
-    echo 'APT::Get::Assume-Yes "true";' >> /etc/apt/apt.conf.d/99timeout && \
-    echo 'APT::Install-Recommends "false";' >> /etc/apt/apt.conf.d/99timeout
-
-# 安装系统依赖（使用国内镜像源，速度快）
+# 安装系统依赖（包含运行时需要的库）
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    g++ \
-    libpq-dev \
+    libpq5 \
     curl \
     ca-certificates \
+    libmagic1 \
+    libjpeg62-turbo \
+    libpng16-16 \
+    libgomp1 \
+    libglib2.0-0 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libcairo2 \
+    libgdk-pixbuf-2.0-0 \
+    shared-mime-info \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
 # 复制依赖文件
 COPY requirements.txt .
 
-# 安装 Python 依赖（使用阿里云 PyPI 镜像加速）
-RUN pip install --upgrade pip -i https://mirrors.aliyun.com/pypi/simple/ && \
-    pip install --no-cache-dir -r requirements.txt \
-    -i https://mirrors.aliyun.com/pypi/simple/ \
-    --trusted-host mirrors.aliyun.com
+# 配置 pip 使用阿里云镜像源并安装 Python 依赖
+RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ && \
+    pip config set install.trusted-host mirrors.aliyun.com && \
+    pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # 复制应用代码
 COPY . .
