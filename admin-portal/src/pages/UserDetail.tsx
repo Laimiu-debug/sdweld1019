@@ -91,7 +91,7 @@ const UserDetail: React.FC = () => {
     try {
       // API拦截器会自动提取data字段，所以这里直接接收用户数据对象
       const userData = await apiService.getUserDetail(userId);
-      setUser(userData);
+      setUser(userData as UserDetailData);
     } catch (error: any) {
       console.error('获取用户详情失败:', error);
       setError(error.message || '获取用户详情失败');
@@ -226,6 +226,9 @@ const UserDetail: React.FC = () => {
       </div>
     );
   }
+
+  // TypeScript 类型守卫：确保 user 不为 null
+  if (!user) return null;
 
   return (
     <div>

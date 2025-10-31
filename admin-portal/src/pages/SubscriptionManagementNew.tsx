@@ -201,7 +201,7 @@ const SubscriptionManagementNew: React.FC = () => {
       title: '金额',
       dataIndex: 'price',
       key: 'price',
-      render: (price: number, record: any) => (
+      render: (price: number) => (
         <span style={{ fontWeight: 500, color: '#1890ff' }}>
           ¥{price.toFixed(2)}
         </span>
