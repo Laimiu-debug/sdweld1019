@@ -578,17 +578,19 @@ async def duplicate_ppqr(
                 detail="pPQR不存在或无权访问"
             )
 
-        # 检查会员配额（仅个人工作区）
-        if workspace_context.workspace_type == WorkspaceType.PERSONAL:
-            from app.services.membership_service import MembershipService
-            membership_service = MembershipService(db)
+        # 检查配额（个人和企业工作区）
+        from app.services.quota_service import QuotaService, QuotaType
+        quota_service = QuotaService(db)
 
-            if not membership_service.check_quota_available(current_user, "ppqr"):
-                limits = membership_service.get_membership_limits(current_user.member_tier)
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"已达到pPQR配额限制 ({limits.get('ppqr', 0)}个)，请升级会员等级"
-                )
+        try:
+            quota_service.check_quota(
+                current_user,
+                workspace_context,
+                QuotaType.PPQR,
+                1
+            )
+        except HTTPException:
+            raise
 
         # 构建新的pPQR数据
         ppqr_data = {
@@ -645,72 +647,11 @@ async def duplicate_ppqr(
         )
 
 
-@router.post("/{ppqr_id}/submit")
-async def submit_ppqr_for_review(
-    ppqr_id: str,
-    db: Session = Depends(deps.get_db),
-    current_user: Any = Depends(deps.get_current_active_user)
-) -> Any:
-    """
-    提交pPQR审核
-    """
-    # TODO: 实现实际的提交逻辑
-    return {
-        "success": True,
-        "data": {
-            "id": ppqr_id,
-            "status": "under_review",
-            "submitted_at": "2025-01-01T00:00:00Z"
-        },
-        "message": "pPQR已提交审核"
-    }
-
-
-@router.post("/{ppqr_id}/approve")
-async def approve_ppqr(
-    ppqr_id: str,
-    approval_data: dict,
-    db: Session = Depends(deps.get_db),
-    current_user: Any = Depends(deps.get_current_active_user)
-) -> Any:
-    """
-    审批通过pPQR
-    """
-    # TODO: 实现实际的审批逻辑
-    return {
-        "success": True,
-        "data": {
-            "id": ppqr_id,
-            "status": "approved",
-            "approved_at": "2025-01-01T00:00:00Z",
-            "approved_by": current_user.id
-        },
-        "message": "pPQR审批通过"
-    }
-
-
-@router.post("/{ppqr_id}/reject")
-async def reject_ppqr(
-    ppqr_id: str,
-    rejection_data: dict,
-    db: Session = Depends(deps.get_db),
-    current_user: Any = Depends(deps.get_current_active_user)
-) -> Any:
-    """
-    审批拒绝pPQR
-    """
-    # TODO: 实现实际的拒绝逻辑
-    return {
-        "success": True,
-        "data": {
-            "id": ppqr_id,
-            "status": "rejected",
-            "rejected_at": "2025-01-01T00:00:00Z",
-            "rejected_by": current_user.id,
-            "rejection_reason": rejection_data.get("reason", "")
-        },
-        "message": "pPQR已拒绝"
-    }
+# 注意：pPQR的审批功能使用统一的审批系统 API
+# 请使用 /api/v1/approvals/submit 提交审批
+# 请使用 /api/v1/approvals/{instance_id}/approve 批准
+# 请使用 /api/v1/approvals/{instance_id}/reject 拒绝
+# 详见 backend/app/api/v1/endpoints/approvals.py
 
 
 @router.post("/{ppqr_id}/convert-to-pqr")

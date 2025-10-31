@@ -18,7 +18,9 @@ from app.api.v1.endpoints import (
     custom_modules,
     shared_library,
     pqr,
+    pqr_export,
     ppqr,
+    ppqr_export,
     welders,
     materials,
     equipment,
@@ -94,8 +96,14 @@ api_router.include_router(shared_library.router, prefix="/shared-library", tags=
 # PQR管理路由
 api_router.include_router(pqr.router, prefix="/pqr", tags=["PQR管理"])
 
+# PQR导出路由
+api_router.include_router(pqr_export.router, prefix="/pqr", tags=["PQR导出"])
+
 # pPQR管理路由
 api_router.include_router(ppqr.router, prefix="/ppqr", tags=["pPQR管理"])
+
+# pPQR导出路由
+api_router.include_router(ppqr_export.router, prefix="/ppqr", tags=["pPQR导出"])
 
 # 焊工管理路由
 api_router.include_router(welders.router, prefix="/welders", tags=["焊工管理"])

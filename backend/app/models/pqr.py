@@ -171,6 +171,9 @@ class PQR(Base):
     template_id = Column(String(100), ForeignKey('wps_templates.id', ondelete='SET NULL'), nullable=True, index=True, comment="使用的模板ID（可为空，模板删除后自动设为NULL）")
     modules_data = Column(JSONB, comment="模块化数据（JSONB格式）")
 
+    # 文档编辑模式：存储富文本HTML内容
+    document_html = Column(Text, nullable=True, comment="文档HTML内容（用于文档编辑模式）")
+
     # ==================== 时间戳字段 ====================
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间")

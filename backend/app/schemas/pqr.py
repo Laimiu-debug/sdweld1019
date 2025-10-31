@@ -278,6 +278,9 @@ class PQRUpdate(BaseModel):
     # 模块化数据支持
     template_id: Optional[str] = Field(None, description="模板ID")
     modules_data: Optional[dict] = Field(None, description="模块化数据")
+
+    # 文档编辑模式
+    document_html: Optional[str] = Field(None, description="文档HTML内容（用于文档编辑模式）")
     status: Optional[str] = Field(None, description="状态")
 
 

@@ -27,39 +27,54 @@ const WeldJointDiagramField: React.FC<WeldJointDiagramFieldProps> = ({
 
   // 处理图表生成
   const handleGenerate = (canvas: HTMLCanvasElement) => {
-    // 将 canvas 转换为 blob
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        message.error('生成图表失败')
-        return
-      }
+    // 将 canvas 直接转换为 base64 URL（不使用 blob URL，因为 blob URL 在页面刷新后会失效）
+    const base64Url = canvas.toDataURL('image/png')
 
-      // 创建文件对象
-      const file = new File([blob], `weld_joint_diagram_${Date.now()}.png`, { type: 'image/png' })
-      
-      // 创建 UploadFile 对象
-      const uploadFile: UploadFile = {
-        uid: `-${Date.now()}`,
-        name: file.name,
-        status: 'done',
-        url: URL.createObjectURL(blob),
-        originFileObj: file as any
-      }
+    if (!base64Url) {
+      message.error('生成图表失败')
+      return
+    }
 
-      // 更新值
-      onChange?.([uploadFile])
-      setModalVisible(false)
-      message.success('焊接接头示意图生成成功！')
-    }, 'image/png')
+    // 创建 UploadFile 对象，直接使用 base64 URL
+    const uploadFile: UploadFile = {
+      uid: `-${Date.now()}`,
+      name: `weld_joint_diagram_${Date.now()}.png`,
+      status: 'done',
+      url: base64Url,  // 使用 base64 URL，这样在页面刷新后仍然有效
+      thumbUrl: base64Url
+      // 不包含 originFileObj，避免序列化问题
+    }
+
+    console.log('[WeldJointDiagramField] 生成图表成功:', {
+      name: uploadFile.name,
+      urlType: 'base64',
+      urlLength: base64Url.length
+    })
+
+    // 更新值
+    onChange?.([uploadFile])
+    setModalVisible(false)
+    message.success('焊接接头示意图生成成功！')
   }
 
   // 处理文件上传
-  const handleUploadChange = (info: any) => {
+  const handleUploadChange = async (info: any) => {
     let fileList = [...info.fileList]
-    
+
     // 只保留最新的一个文件
     fileList = fileList.slice(-1)
-    
+
+    // 将上传的文件转换为 base64
+    if (fileList.length > 0 && fileList[0].originFileObj) {
+      try {
+        const base64 = await getBase64(fileList[0].originFileObj)
+        fileList[0].url = base64
+        fileList[0].thumbUrl = base64
+      } catch (error) {
+        console.error('转换图片为base64失败:', error)
+      }
+    }
+
     // 更新文件列表
     onChange?.(fileList)
   }
@@ -98,9 +113,23 @@ const WeldJointDiagramField: React.FC<WeldJointDiagramFieldProps> = ({
           <div>
             <div style={{ marginBottom: 16 }}>
               <Image
-                src={value[0].url || value[0].preview}
+                src={value[0].url || value[0].thumbUrl || value[0].preview}
                 alt="preview"
                 style={{ maxWidth: '100%', maxHeight: 300, borderRadius: '4px' }}
+                fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMIAAADDCAYAAADQvc6UAAABRWlDQ1BJQ0MgUHJvZmlsZQAAKJFjYGASSSwoyGFhYGDIzSspCnJ3UoiIjFJgf8LAwSDCIMogwMCcmFxc4BgQ4ANUwgCjUcG3awyMIPqyLsis7PPOq3QdDFcvjV3jOD1boQVTPQrgSkktTgbSf4A4LbmgqISBgTEFyFYuLykAsTuAbJEioKOA7DkgdjqEvQHEToKwj4DVhAQ5A9k3gGyB5IxEoBmML4BsnSQk8XQkNtReEOBxcfXxUQg1Mjc0dyHgXNJBSWpFCYh2zi+oLMpMzyhRcASGUqqCZ16yno6CkYGRAQMDKMwhqj/fAIcloxgHQqxAjIHBEugw5sUIsSQpBobtQPdLciLEVJYzMPBHMDBsayhILEqEO4DxG0txmrERhM29nYGBddr//5/DGRjYNRkY/l7////39v///y4Dmn+LgeHANwDrkl1AuO+pmgAAADhlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAAqACAAQAAAABAAAAwqADAAQAAAABAAAAwwAAAAD9b/HnAAAHlklEQVR4Ae3dP3Ik1RUG8O+L"
+                onError={(e) => {
+                  console.error('[WeldJointDiagramField] 图片加载失败:', {
+                    src: value[0].url || value[0].thumbUrl || value[0].preview,
+                    error: e
+                  });
+                  // 尝试使用备用URL
+                  const target = e.target as HTMLImageElement;
+                  if (target.src !== value[0].thumbUrl && value[0].thumbUrl) {
+                    target.src = value[0].thumbUrl;
+                  } else if (target.src !== value[0].preview && value[0].preview) {
+                    target.src = value[0].preview;
+                  }
+                }}
               />
             </div>
             <Space>

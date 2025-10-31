@@ -182,6 +182,7 @@ async def shutdown_event():
 
 # 健康检查端点
 @app.get("/health")
+@app.get("/api/v1/health")
 async def health_check():
     """健康检查端点."""
     return {

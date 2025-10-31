@@ -58,17 +58,36 @@ const WPSEdit: React.FC = () => {
         if (module) {
           Object.keys(module.fields).forEach(fieldKey => {
             const formFieldName = `${instance.instanceId}_${fieldKey}`
-            if (formValues[formFieldName] !== undefined && formValues[formFieldName] !== null && formValues[formFieldName] !== '') {
-              let fieldValue = formValues[formFieldName]
+            const fieldDef = module.fields[fieldKey]
+            let fieldValue = formValues[formFieldName]
 
-              // 如果是日期字段且值是 dayjs 对象，转换为字符串
-              const fieldDef = module.fields[fieldKey]
-              if (fieldDef?.type === 'date' && dayjs.isDayjs(fieldValue)) {
-                fieldValue = fieldValue.format('YYYY-MM-DD')
-              }
-
-              moduleData.data[fieldKey] = fieldValue
+            // 跳过空值（但保留 false 和 0）
+            if (fieldValue === undefined || fieldValue === null || fieldValue === '') {
+              return
             }
+
+            // 跳过空数组（图片字段）
+            if (Array.isArray(fieldValue) && fieldValue.length === 0) {
+              return
+            }
+
+            // 如果是日期字段且值是 dayjs 对象，转换为字符串
+            if (fieldDef?.type === 'date' && dayjs.isDayjs(fieldValue)) {
+              fieldValue = fieldValue.format('YYYY-MM-DD')
+            }
+            // 如果是图片字段，只保留必要的属性，移除 originFileObj
+            else if (fieldDef?.type === 'image' && Array.isArray(fieldValue)) {
+              fieldValue = fieldValue.map((img: any) => ({
+                uid: img.uid,
+                name: img.name,
+                status: img.status,
+                url: img.url,
+                thumbUrl: img.thumbUrl
+                // 不保存 originFileObj，避免序列化问题
+              }))
+            }
+
+            moduleData.data[fieldKey] = fieldValue
           })
         }
 
@@ -107,6 +126,14 @@ const WPSEdit: React.FC = () => {
         }
 
         const wps = wpsResponse.data
+        console.log('[WPSEdit] 加载的WPS数据:', {
+          id: wps.id,
+          wps_number: wps.wps_number,
+          template_id: wps.template_id,
+          has_modules_data: !!wps.modules_data,
+          has_document_html: !!wps.document_html,
+          document_html_length: wps.document_html?.length || 0
+        })
         setWpsData(wps)
 
         // 如果有 template_id，尝试获取模板
@@ -114,6 +141,11 @@ const WPSEdit: React.FC = () => {
           try {
             const templateResponse = await wpsTemplateService.getTemplate(wps.template_id)
             if (templateResponse.success && templateResponse.data) {
+              console.log('[WPSEdit] 加载的模板:', {
+                id: templateResponse.data.id,
+                name: templateResponse.data.name,
+                module_instances_count: templateResponse.data.module_instances?.length || 0
+              })
               setTemplate(templateResponse.data)
             }
           } catch (error) {
@@ -143,6 +175,58 @@ const WPSEdit: React.FC = () => {
                 // 如果是日期字段且值是字符串，转换为 dayjs 对象
                 if (fieldDef?.type === 'date' && fieldValue && typeof fieldValue === 'string') {
                   formValues[formFieldName] = dayjs(fieldValue)
+                }
+                // 如果是图片字段，确保格式正确
+                else if (fieldDef?.type === 'image' && Array.isArray(fieldValue)) {
+                  console.log(`[WPSEdit] 恢复图片字段 ${formFieldName}:`, JSON.stringify(fieldValue).substring(0, 200))
+                  // 确保每个图片对象都有必要的属性，并过滤掉无效的 blob URL
+                  formValues[formFieldName] = fieldValue
+                    .map((img: any, index: number) => {
+                      const url = img.url || img.thumbUrl || ''
+
+                      // 检测并过滤掉失效的 blob URL - blob URL 在页面刷新后会失效
+                      if (url.startsWith('blob:')) {
+                        console.warn(`[WPSEdit] 图片 ${index} 包含失效的 blob URL，已跳过:`, img.name, url.substring(0, 50))
+                        return null  // 标记为无效
+                      }
+
+                      // 如果已经是正确的 UploadFile 格式且 URL 有效，直接使用
+                      if (img.uid && img.name && url.startsWith('data:image')) {
+                        console.log(`[WPSEdit] 图片 ${index} 已是正确格式:`, img.name, url.substring(0, 50))
+                        return img
+                      }
+
+                      // 如果 URL 有效，构造一个标准的 UploadFile 对象
+                      if (url.startsWith('data:image')) {
+                        const uploadFile = {
+                          uid: img.uid || `-${Date.now()}-${index}`,
+                          name: img.name || `image_${index}.png`,
+                          status: 'done',
+                          url: url,
+                          thumbUrl: url
+                          // 不包含 originFileObj
+                        }
+                        console.log(`[WPSEdit] 构造图片 ${index} UploadFile:`, uploadFile.name, uploadFile.url?.substring(0, 50))
+                        return uploadFile
+                      }
+
+                      // URL 无效或格式不正确
+                      console.warn(`[WPSEdit] 图片 ${index} URL 无效，已跳过:`, img.name, url.substring(0, 50))
+                      return null
+                    })
+                    .filter((img: any) => img !== null)  // 移除无效图片
+
+                  // 验证图片数据
+                  const validImages = formValues[formFieldName].filter((img: any) => {
+                    const url = img.url || img.thumbUrl
+                    return url && url.startsWith('data:image')
+                  })
+                  console.log(`[WPSEdit] 字段 ${formFieldName} 有效图片数量:`, validImages.length, '/', formValues[formFieldName].length)
+
+                  // 如果所有图片都无效，显示警告
+                  if (fieldValue.length > 0 && validImages.length === 0) {
+                    console.error(`[WPSEdit] 字段 ${formFieldName} 的所有图片数据已损坏，请重新生成或上传图片`)
+                  }
                 } else {
                   formValues[formFieldName] = fieldValue
                 }
@@ -153,19 +237,12 @@ const WPSEdit: React.FC = () => {
 
         form.setFieldsValue(formValues)
 
-        // 生成文档HTML（用于文档编辑模式）
-        if (template && template.module_instances && wps.modules_data) {
-          const html = convertModulesToTipTapHTML(
-            template.module_instances,
-            wps.modules_data,
-            {
-              title: wps.title || '',
-              number: wps.wps_number || '',
-              revision: wps.revision || 'A'
-            },
-            'wps'
-          )
-          setDocumentHTML(wps.document_html || html)
+        // 设置文档HTML（如果存在）
+        if (wps.document_html) {
+          console.log('[WPSEdit] 设置已有的document_html，长度:', wps.document_html.length)
+          setDocumentHTML(wps.document_html)
+        } else {
+          console.log('[WPSEdit] document_html为空，等待模板加载后生成')
         }
       } catch (error: any) {
         console.error('获取数据失败:', error)
@@ -177,6 +254,53 @@ const WPSEdit: React.FC = () => {
 
     fetchData()
   }, [id, form])
+
+  // 当数据加载完成后，如果document_html为空，从表单数据生成HTML
+  useEffect(() => {
+    console.log('[WPSEdit] 检查是否需要生成HTML:', {
+      hasTemplate: !!template,
+      hasWpsData: !!wpsData,
+      hasModulesData: !!wpsData?.modules_data,
+      documentHTMLLength: documentHTML?.length || 0,
+      templateInstances: template?.module_instances?.length || 0,
+      loading: loading
+    })
+
+    // 只有在数据加载完成后才尝试生成HTML
+    if (!loading && wpsData && wpsData.modules_data && !documentHTML) {
+      console.log('[WPSEdit] 从表单数据生成HTML...')
+
+      // 如果有模板，使用模板的module_instances
+      // 如果没有模板，从modules_data重建module_instances
+      let moduleInstances = template?.module_instances
+
+      if (!moduleInstances) {
+        console.log('[WPSEdit] 模板不存在，从modules_data重建module_instances')
+        moduleInstances = Object.entries(wpsData.modules_data).map(([instanceId, content]: [string, any]) => ({
+          instanceId,
+          moduleId: content.moduleId,
+          customName: content.customName || '',
+          rowIndex: content.rowIndex || 0,
+          columnIndex: content.columnIndex || 0,
+          order: 0,
+        }))
+      }
+
+      const html = convertModulesToTipTapHTML(
+        moduleInstances,
+        wpsData.modules_data,
+        {
+          title: wpsData.title || '',
+          number: wpsData.wps_number || '',
+          revision: wpsData.revision || 'A'
+        },
+        'wps'
+      )
+      console.log('[WPSEdit] 生成的HTML长度:', html?.length || 0)
+      console.log('[WPSEdit] 生成的HTML内容:', html?.substring(0, 200))
+      setDocumentHTML(html)
+    }
+  }, [template, wpsData, documentHTML, loading])
 
   // 处理文档模式保存
   const handleSaveDocument = async (htmlContent: string) => {
@@ -203,11 +327,11 @@ const WPSEdit: React.FC = () => {
   }
 
   // 处理Word导出
-  const handleExportWord = async () => {
+  const handleExportWord = async (style: string = 'blue_white') => {
     try {
       message.loading('正在生成Word文档...', 0)
 
-      const response = await fetch(`/api/v1/wps/${id}/export/word`, {
+      const response = await fetch(`/api/v1/wps/${id}/export/word?style=${style}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -235,35 +359,113 @@ const WPSEdit: React.FC = () => {
     }
   }
 
-  // 处理PDF导出
+  // 处理PDF导出 - 使用浏览器打印功能
   const handleExportPDF = async () => {
     try {
-      message.loading('正在生成PDF文档...', 0)
-
-      const response = await fetch(`/api/v1/wps/${id}/export/pdf`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      })
-
-      if (!response.ok) {
-        throw new Error('导出失败')
+      // 先保存当前内容（如果在文档编辑模式）
+      if (editMode === 'document' && documentHTML) {
+        message.loading('正在保存文档...', 0)
+        await handleSaveDocument(documentHTML)
+        message.destroy()
       }
 
-      const blob = await response.blob()
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `WPS_${wpsData?.wps_number}_${new Date().toISOString().split('T')[0]}.pdf`
-      link.click()
-      URL.revokeObjectURL(url)
+      // 打开打印预览窗口
+      const printWindow = window.open('', '_blank')
+      if (!printWindow) {
+        message.error('无法打开打印窗口，请检查浏览器弹窗设置')
+        return
+      }
 
-      message.destroy()
-      message.success('导出成功')
+      // 生成打印页面HTML
+      const printHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>WPS-${wpsData?.wps_number}</title>
+          <style>
+            @page {
+              size: A4;
+              margin: 2cm;
+            }
+            body {
+              font-family: 'Microsoft YaHei', Arial, sans-serif;
+              line-height: 1.6;
+              color: #333;
+              max-width: 21cm;
+              margin: 0 auto;
+              padding: 20px;
+            }
+            h1 {
+              text-align: center;
+              color: #1890ff;
+              margin-bottom: 10px;
+            }
+            h2, h3 {
+              color: #1890ff;
+              margin-top: 20px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin: 20px 0;
+              page-break-inside: avoid;
+            }
+            table, th, td {
+              border: 1px solid #ddd;
+            }
+            th, td {
+              padding: 8px;
+              text-align: left;
+            }
+            th {
+              background-color: #f0f0f0;
+              font-weight: bold;
+            }
+            hr {
+              border: none;
+              border-top: 2px solid #ddd;
+              margin: 20px 0;
+            }
+            .footer {
+              margin-top: 40px;
+              text-align: center;
+              font-size: 12px;
+              color: #999;
+            }
+            @media print {
+              body {
+                padding: 0;
+              }
+              .no-print {
+                display: none;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          ${documentHTML || '<p>文档内容为空</p>'}
+          <div class="footer">
+            <p>打印日期: ${new Date().toLocaleString('zh-CN')}</p>
+          </div>
+          <div class="no-print" style="position: fixed; top: 20px; right: 20px;">
+            <button onclick="window.print()" style="padding: 10px 20px; background: #1890ff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
+              打印/保存为PDF
+            </button>
+            <button onclick="window.close()" style="padding: 10px 20px; background: #999; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; margin-left: 10px;">
+              关闭
+            </button>
+          </div>
+        </body>
+        </html>
+      `
+
+      printWindow.document.write(printHTML)
+      printWindow.document.close()
+
+      message.success('已打开打印预览窗口，请使用浏览器的"打印"功能保存为PDF')
     } catch (error) {
-      message.destroy()
-      message.error('导出失败，请稍后重试')
+      message.error('打开打印预览失败')
       console.error('导出PDF失败:', error)
     }
   }
@@ -291,26 +493,60 @@ const WPSEdit: React.FC = () => {
           if (module) {
             Object.keys(module.fields).forEach(fieldKey => {
               const formFieldName = `${instance.instanceId}_${fieldKey}`
-              if (values[formFieldName] !== undefined && values[formFieldName] !== null && values[formFieldName] !== '') {
-                const fieldDef = module.fields[fieldKey]
-                let fieldValue = values[formFieldName]
+              const fieldDef = module.fields[fieldKey]
+              let fieldValue = values[formFieldName]
 
-                // 如果是日期字段且值是 dayjs 对象，转换为字符串
-                if (fieldDef?.type === 'date' && dayjs.isDayjs(fieldValue)) {
-                  fieldValue = fieldValue.format('YYYY-MM-DD')
-                }
+              // 跳过空值（但保留 false 和 0）
+              if (fieldValue === undefined || fieldValue === null || fieldValue === '') {
+                return
+              }
 
-                moduleData[fieldKey] = fieldValue
+              // 跳过空数组（图片字段）
+              if (Array.isArray(fieldValue) && fieldValue.length === 0) {
+                return
+              }
 
-                // 从 header_data 模块中提取 wps_number, title, revision
-                if (instance.moduleId === 'header_data') {
-                  if (fieldKey === 'wps_number') {
-                    wpsNumber = values[formFieldName]
-                  } else if (fieldKey === 'title') {
-                    wpsTitle = values[formFieldName]
-                  } else if (fieldKey === 'revision') {
-                    wpsRevision = values[formFieldName]
+              // 如果是日期字段且值是 dayjs 对象，转换为字符串
+              if (fieldDef?.type === 'date' && dayjs.isDayjs(fieldValue)) {
+                fieldValue = fieldValue.format('YYYY-MM-DD')
+              }
+              // 如果是图片字段，只保留必要的属性，移除 originFileObj
+              else if (fieldDef?.type === 'image' && Array.isArray(fieldValue)) {
+                console.log(`[WPSEdit] 处理图片字段 ${fieldKey}，原始数据:`, fieldValue.map(img => ({
+                  name: img.name,
+                  hasUrl: !!img.url,
+                  hasThumbUrl: !!img.thumbUrl,
+                  urlType: img.url?.startsWith('data:image') ? 'base64' : img.url?.startsWith('blob:') ? 'blob' : 'unknown'
+                })))
+
+                fieldValue = fieldValue.map((img: any) => {
+                  const cleanedImg = {
+                    uid: img.uid,
+                    name: img.name,
+                    status: img.status,
+                    url: img.url,
+                    thumbUrl: img.thumbUrl
+                    // 不保存 originFileObj，避免序列化问题
                   }
+                  console.log(`[WPSEdit] 保存图片字段 ${fieldKey}:`, {
+                    name: cleanedImg.name,
+                    urlType: cleanedImg.url?.startsWith('data:image') ? 'base64' : cleanedImg.url?.startsWith('blob:') ? 'blob' : 'unknown',
+                    urlPreview: cleanedImg.url?.substring(0, 50)
+                  })
+                  return cleanedImg
+                })
+              }
+
+              moduleData[fieldKey] = fieldValue
+
+              // 从 header_data 模块中提取 wps_number, title, revision
+              if (instance.moduleId === 'header_data') {
+                if (fieldKey === 'wps_number') {
+                  wpsNumber = values[formFieldName]
+                } else if (fieldKey === 'title') {
+                  wpsTitle = values[formFieldName]
+                } else if (fieldKey === 'revision') {
+                  wpsRevision = values[formFieldName]
                 }
               }
             })
@@ -336,17 +572,44 @@ const WPSEdit: React.FC = () => {
             if (module) {
               Object.keys(module.fields).forEach(fieldKey => {
                 const formFieldName = `${instanceId}_${fieldKey}`
-                if (values[formFieldName] !== undefined && values[formFieldName] !== null && values[formFieldName] !== '') {
-                  const fieldDef = module.fields[fieldKey]
-                  let fieldValue = values[formFieldName]
+                const fieldDef = module.fields[fieldKey]
+                let fieldValue = values[formFieldName]
 
-                  // 如果是日期字段且值是 dayjs 对象，转换为字符串
-                  if (fieldDef?.type === 'date' && dayjs.isDayjs(fieldValue)) {
-                    fieldValue = fieldValue.format('YYYY-MM-DD')
-                  }
-
-                  moduleData[fieldKey] = fieldValue
+                // 跳过空值（但保留 false 和 0）
+                if (fieldValue === undefined || fieldValue === null || fieldValue === '') {
+                  return
                 }
+
+                // 跳过空数组（图片字段）
+                if (Array.isArray(fieldValue) && fieldValue.length === 0) {
+                  return
+                }
+
+                // 如果是日期字段且值是 dayjs 对象，转换为字符串
+                if (fieldDef?.type === 'date' && dayjs.isDayjs(fieldValue)) {
+                  fieldValue = fieldValue.format('YYYY-MM-DD')
+                }
+                // 如果是图片字段，只保留必要的属性，移除 originFileObj
+                else if (fieldDef?.type === 'image' && Array.isArray(fieldValue)) {
+                  fieldValue = fieldValue.map((img: any) => {
+                    const cleanedImg = {
+                      uid: img.uid,
+                      name: img.name,
+                      status: img.status,
+                      url: img.url,
+                      thumbUrl: img.thumbUrl
+                      // 不保存 originFileObj，避免序列化问题
+                    }
+                    console.log(`[WPSEdit] 保存图片字段 ${fieldKey}:`, {
+                      name: cleanedImg.name,
+                      urlType: cleanedImg.url?.startsWith('data:image') ? 'base64' : cleanedImg.url?.startsWith('blob:') ? 'blob' : 'unknown',
+                      urlPreview: cleanedImg.url?.substring(0, 50)
+                    })
+                    return cleanedImg
+                  })
+                }
+
+                moduleData[fieldKey] = fieldValue
               })
             }
 
@@ -371,6 +634,9 @@ const WPSEdit: React.FC = () => {
       if (Object.keys(modulesData).length > 0) {
         updateData.modules_data = modulesData
       }
+
+      // 调试：打印即将发送的数据
+      console.log('[WPSEdit] 即将保存的 updateData:', JSON.stringify(updateData).substring(0, 500))
 
       // 调用 API 更新
       const response = await wpsService.updateWPS(parseInt(id!), updateData)

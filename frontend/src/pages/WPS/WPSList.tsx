@@ -37,6 +37,8 @@ import {
   SendOutlined,
   RollbackOutlined,
   ClockCircleOutlined,
+  FileWordOutlined,
+  FilePdfOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -464,13 +466,23 @@ const WPSList: React.FC = () => {
             </Button>
           </Tooltip>
 
-          <Tooltip title="下载">
+          <Tooltip title="导出Word">
             <Button
-              icon={<DownloadOutlined />}
+              icon={<FileWordOutlined />}
               size="small"
-              onClick={() => handleDownload(record)}
+              onClick={() => handleExportWord(record)}
             >
-              下载
+              Word
+            </Button>
+          </Tooltip>
+
+          <Tooltip title="导出PDF">
+            <Button
+              icon={<FilePdfOutlined />}
+              size="small"
+              onClick={() => handleExportPDF(record)}
+            >
+              PDF
             </Button>
           </Tooltip>
 
@@ -539,10 +551,158 @@ const WPSList: React.FC = () => {
     setPagination(prev => ({ ...prev, current: page, pageSize }))
   }
 
-  // 处理下载
-  const handleDownload = (record: WPSRecord) => {
-    message.info(`开始下载 ${record.wps_number}`)
-    // 这里应该调用实际的下载API
+  // 处理导出Word
+  const handleExportWord = async (record: WPSRecord) => {
+    try {
+      message.loading('正在生成Word文档...', 0)
+
+      const response = await fetch(`/api/v1/wps/${record.id}/export/word`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('导出失败')
+      }
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `WPS_${record.wps_number}_${new Date().toISOString().split('T')[0]}.docx`
+      link.click()
+      URL.revokeObjectURL(url)
+
+      message.destroy()
+      message.success('导出成功')
+    } catch (error) {
+      message.destroy()
+      message.error('导出失败，请稍后重试')
+      console.error('导出Word失败:', error)
+    }
+  }
+
+  // 处理导出PDF - 使用浏览器打印功能
+  const handleExportPDF = async (record: WPSRecord) => {
+    try {
+      message.loading('正在获取文档内容...', 0)
+
+      // 获取WPS详情（包含document_html）
+      const response = await fetch(`/api/v1/wps/${record.id}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('获取文档失败')
+      }
+
+      const wpsData = await response.json()
+      message.destroy()
+
+      // 打开打印预览窗口
+      const printWindow = window.open('', '_blank')
+      if (!printWindow) {
+        message.error('无法打开打印窗口，请检查浏览器弹窗设置')
+        return
+      }
+
+      // 生成打印页面HTML
+      const printHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>WPS-${record.wps_number}</title>
+          <style>
+            @page {
+              size: A4;
+              margin: 2cm;
+            }
+            body {
+              font-family: 'Microsoft YaHei', Arial, sans-serif;
+              line-height: 1.6;
+              color: #333;
+              max-width: 21cm;
+              margin: 0 auto;
+              padding: 20px;
+            }
+            h1 {
+              text-align: center;
+              color: #1890ff;
+              margin-bottom: 10px;
+            }
+            h2, h3 {
+              color: #1890ff;
+              margin-top: 20px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin: 20px 0;
+              page-break-inside: avoid;
+            }
+            table, th, td {
+              border: 1px solid #ddd;
+            }
+            th, td {
+              padding: 8px;
+              text-align: left;
+            }
+            th {
+              background-color: #f0f0f0;
+              font-weight: bold;
+            }
+            hr {
+              border: none;
+              border-top: 2px solid #ddd;
+              margin: 20px 0;
+            }
+            .footer {
+              margin-top: 40px;
+              text-align: center;
+              font-size: 12px;
+              color: #999;
+            }
+            @media print {
+              body {
+                padding: 0;
+              }
+              .no-print {
+                display: none;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          ${wpsData.document_html || '<p>文档内容为空，请先在编辑页面使用文档编辑模式编辑内容</p>'}
+          <div class="footer">
+            <p>打印日期: ${new Date().toLocaleString('zh-CN')}</p>
+          </div>
+          <div class="no-print" style="position: fixed; top: 20px; right: 20px;">
+            <button onclick="window.print()" style="padding: 10px 20px; background: #1890ff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
+              打印/保存为PDF
+            </button>
+            <button onclick="window.close()" style="padding: 10px 20px; background: #999; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; margin-left: 10px;">
+              关闭
+            </button>
+          </div>
+        </body>
+        </html>
+      `
+
+      printWindow.document.write(printHTML)
+      printWindow.document.close()
+
+      message.success('已打开打印预览窗口，请使用浏览器的"打印"功能保存为PDF')
+    } catch (error) {
+      message.destroy()
+      message.error('打开打印预览失败')
+      console.error('导出PDF失败:', error)
+    }
   }
 
   // 处理删除

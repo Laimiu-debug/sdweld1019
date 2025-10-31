@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+﻿import React, { useState } from 'react'
 import {
   Card,
   Button,
@@ -33,6 +33,7 @@ import {
   CopyOutlined,
   FilePdfOutlined,
   FileExcelOutlined,
+  FileWordOutlined,
   SwapOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -318,6 +319,16 @@ const PPQRList: React.FC = () => {
               </Button>
             </Tooltip>
 
+            <Tooltip title="导出Word">
+              <Button
+                icon={<FileWordOutlined />}
+                size="small"
+                onClick={() => handleExportWord(record.id, record.ppqr_number)}
+              >
+                Word
+              </Button>
+            </Tooltip>
+
             <Tooltip title="导出PDF">
               <Button
                 icon={<FilePdfOutlined />}
@@ -421,21 +432,157 @@ const PPQRList: React.FC = () => {
     duplicateMutation.mutate(id)
   }
 
-  // 处理导出PDF
-  const handleExportPDF = async (id: number, title: string) => {
+  // 处理导出Word
+  const handleExportWord = async (id: number, ppqr_number: string) => {
     try {
-      const blob = await ppqrService.exportPDF(id)
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${title}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
+      message.loading('正在生成Word文档...', 0)
+
+      const response = await fetch(`/api/v1/ppqr/${id}/export/word`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('导出失败')
+      }
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `pPQR_${ppqr_number}_${new Date().toISOString().split('T')[0]}.docx`
+      link.click()
+      URL.revokeObjectURL(url)
+
+      message.destroy()
       message.success('导出成功')
     } catch (error) {
-      message.error('导出失败')
+      message.destroy()
+      message.error('导出失败，请稍后重试')
+      console.error('导出Word失败:', error)
+    }
+  }
+
+  // 处理导出PDF - 使用浏览器打印功能
+  const handleExportPDF = async (id: number, ppqr_number: string) => {
+    try {
+      message.loading('正在获取文档内容...', 0)
+
+      // 获取pPQR详情（包含document_html）
+      const response = await fetch(`/api/v1/ppqr/${id}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('获取文档失败')
+      }
+
+      const ppqrData = await response.json()
+      message.destroy()
+
+      // 打开打印预览窗口
+      const printWindow = window.open('', '_blank')
+      if (!printWindow) {
+        message.error('无法打开打印窗口，请检查浏览器弹窗设置')
+        return
+      }
+
+      // 生成打印页面HTML
+      const printHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>pPQR-${ppqr_number}</title>
+          <style>
+            @page {
+              size: A4;
+              margin: 2cm;
+            }
+            body {
+              font-family: 'Microsoft YaHei', Arial, sans-serif;
+              line-height: 1.6;
+              color: #333;
+              max-width: 21cm;
+              margin: 0 auto;
+              padding: 20px;
+            }
+            h1 {
+              text-align: center;
+              color: #1890ff;
+              margin-bottom: 10px;
+            }
+            h2, h3 {
+              color: #1890ff;
+              margin-top: 20px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin: 20px 0;
+              page-break-inside: avoid;
+            }
+            table, th, td {
+              border: 1px solid #ddd;
+            }
+            th, td {
+              padding: 8px;
+              text-align: left;
+            }
+            th {
+              background-color: #f0f0f0;
+              font-weight: bold;
+            }
+            hr {
+              border: none;
+              border-top: 2px solid #ddd;
+              margin: 20px 0;
+            }
+            .footer {
+              margin-top: 40px;
+              text-align: center;
+              font-size: 12px;
+              color: #999;
+            }
+            @media print {
+              body {
+                padding: 0;
+              }
+              .no-print {
+                display: none;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          ${ppqrData.document_html || '<p>文档内容为空，请先在编辑页面使用文档编辑模式编辑内容</p>'}
+          <div class="footer">
+            <p>打印日期: ${new Date().toLocaleString('zh-CN')}</p>
+          </div>
+          <div class="no-print" style="position: fixed; top: 20px; right: 20px;">
+            <button onclick="window.print()" style="padding: 10px 20px; background: #1890ff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
+              打印/保存为PDF
+            </button>
+            <button onclick="window.close()" style="padding: 10px 20px; background: #999; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; margin-left: 10px;">
+              关闭
+            </button>
+          </div>
+        </body>
+        </html>
+      `
+
+      printWindow.document.write(printHTML)
+      printWindow.document.close()
+
+      message.success('已打开打印预览窗口，请使用浏览器的"打印"功能保存为PDF')
+    } catch (error) {
+      message.destroy()
+      message.error('打开打印预览失败')
+      console.error('导出PDF失败:', error)
     }
   }
 
@@ -532,16 +679,27 @@ const PPQRList: React.FC = () => {
       </Row>
 
       {/* 配额提醒 */}
-      {user && canCreateMore && canCreateMore('ppqr', user.ppqr_quota_used || 0) === false && (
-        <Alert
-          message="pPQR配额已用完"
-          description="您已达到当前会员等级的pPQR创建上限，请升级会员以创建更多pPQR。"
-          type="warning"
-          showIcon
-          closable
-          style={{ marginBottom: '16px' }}
-        />
-      )}
+      {(() => {
+        const tier = (user as any)?.member_tier || user?.membership_tier || 'free'
+        return tier !== 'enterprise_pro_max' && (
+          <Alert
+            message={`pPQR配额使用情况: ${stats.total}/${getPPQRQuota(tier)}`}
+            description={
+              <Progress
+                percent={(stats.total / getPPQRQuota(tier)) * 100}
+                status={
+                  (stats.total / getPPQRQuota(tier)) >= 0.8
+                    ? 'exception'
+                    : 'normal'
+                }
+              />
+            }
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+          />
+        )
+      })()}
 
       {/* 主内容卡片 */}
       <Card>
@@ -604,36 +762,6 @@ const PPQRList: React.FC = () => {
         </Row>
 
         <Divider />
-
-        {/* 配额进度条 */}
-        {user && (
-          <div style={{ marginBottom: '16px' }}>
-            <Row justify="space-between" align="middle">
-              <Col>
-                <Text type="secondary">
-                  pPQR配额使用情况: {user.ppqr_quota_used || 0} / {getPPQRQuota(user.member_tier || 'free')}
-                </Text>
-              </Col>
-              <Col>
-                <Text type="secondary">
-                  {Math.round(((user.ppqr_quota_used || 0) / getPPQRQuota(user.member_tier || 'free')) * 100)}%
-                </Text>
-              </Col>
-            </Row>
-            <Progress
-              percent={Math.round(((user.ppqr_quota_used || 0) / getPPQRQuota(user.member_tier || 'free')) * 100)}
-              status={
-                (user.ppqr_quota_used || 0) >= getPPQRQuota(user.member_tier || 'free')
-                  ? 'exception'
-                  : 'active'
-              }
-              strokeColor={{
-                '0%': '#108ee9',
-                '100%': '#87d068',
-              }}
-            />
-          </div>
-        )}
 
         {/* 卡片列表区域 */}
         <Spin spinning={isLoading}>

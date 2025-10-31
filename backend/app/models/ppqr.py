@@ -179,6 +179,9 @@ class PPQR(Base):
     notes = Column(Text, comment="备注")
     deviation_notes = Column(Text, comment="偏离说明")
 
+    # 文档编辑模式：存储富文本HTML内容
+    document_html = Column(Text, nullable=True, comment="文档HTML内容（用于文档编辑模式）")
+
     # ==================== 审计字段 ====================
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False, comment="创建人ID")
     updated_by = Column(Integer, ForeignKey("users.id"), nullable=True, comment="更新人ID")

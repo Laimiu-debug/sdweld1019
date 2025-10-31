@@ -28,39 +28,54 @@ const DiagramField: React.FC<DiagramFieldProps> = ({
 
   // 处理图表生成
   const handleGenerate = (canvas: HTMLCanvasElement) => {
-    // 将 canvas 转换为 blob
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        message.error('生成图表失败')
-        return
-      }
+    // 将 canvas 直接转换为 base64 URL（不使用 blob URL，因为 blob URL 在页面刷新后会失效）
+    const base64Url = canvas.toDataURL('image/png')
 
-      // 创建文件对象
-      const file = new File([blob], `${diagramType}_${Date.now()}.png`, { type: 'image/png' })
-      
-      // 创建 UploadFile 对象
-      const uploadFile: UploadFile = {
-        uid: `-${Date.now()}`,
-        name: file.name,
-        status: 'done',
-        url: URL.createObjectURL(blob),
-        originFileObj: file as any
-      }
+    if (!base64Url) {
+      message.error('生成图表失败')
+      return
+    }
 
-      // 更新值
-      onChange?.([ uploadFile])
-      setModalVisible(false)
-      message.success('图表生成成功！')
-    }, 'image/png')
+    // 创建 UploadFile 对象，直接使用 base64 URL
+    const uploadFile: UploadFile = {
+      uid: `-${Date.now()}`,
+      name: `${diagramType}_${Date.now()}.png`,
+      status: 'done',
+      url: base64Url,  // 使用 base64 URL，这样在页面刷新后仍然有效
+      thumbUrl: base64Url
+      // 不包含 originFileObj，避免序列化问题
+    }
+
+    console.log('[DiagramField] 生成图表成功:', {
+      name: uploadFile.name,
+      urlType: 'base64',
+      urlLength: base64Url.length
+    })
+
+    // 更新值
+    onChange?.([uploadFile])
+    setModalVisible(false)
+    message.success('图表生成成功！')
   }
 
   // 处理文件上传
-  const handleUploadChange = (info: any) => {
+  const handleUploadChange = async (info: any) => {
     let fileList = [...info.fileList]
-    
+
     // 只保留最新的一个文件
     fileList = fileList.slice(-1)
-    
+
+    // 将上传的文件转换为 base64
+    if (fileList.length > 0 && fileList[0].originFileObj) {
+      try {
+        const base64 = await getBase64(fileList[0].originFileObj)
+        fileList[0].url = base64
+        fileList[0].thumbUrl = base64
+      } catch (error) {
+        console.error('转换图片为base64失败:', error)
+      }
+    }
+
     // 更新文件列表
     onChange?.(fileList)
   }

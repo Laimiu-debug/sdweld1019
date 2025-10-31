@@ -151,6 +151,25 @@ const PQREdit: React.FC = () => {
                 // 如果是日期字段且值是字符串，转换为 dayjs 对象
                 if (fieldDef?.type === 'date' && fieldValue && typeof fieldValue === 'string') {
                   formValues[formFieldName] = dayjs(fieldValue)
+                }
+                // 如果是图片字段，确保格式正确
+                else if (fieldDef?.type === 'image' && Array.isArray(fieldValue)) {
+                  // 确保每个图片对象都有必要的属性
+                  formValues[formFieldName] = fieldValue.map((img: any, index: number) => {
+                    // 如果已经是正确的 UploadFile 格式，直接使用
+                    if (img.uid && img.name && (img.url || img.thumbUrl)) {
+                      return img
+                    }
+                    // 否则，构造一个标准的 UploadFile 对象
+                    return {
+                      uid: img.uid || `-${Date.now()}-${index}`,
+                      name: img.name || `image_${index}.png`,
+                      status: 'done',
+                      url: img.url || img.thumbUrl || '',
+                      thumbUrl: img.thumbUrl || img.url || '',
+                      originFileObj: img.originFileObj
+                    }
+                  })
                 } else {
                   formValues[formFieldName] = fieldValue
                 }
@@ -170,6 +189,43 @@ const PQREdit: React.FC = () => {
 
     fetchData()
   }, [id, form])
+
+  // 当数据加载完成后，如果document_html为空，从表单数据生成HTML
+  useEffect(() => {
+    // 只有在数据加载完成后才尝试生成HTML
+    if (!loading && pqrData && pqrData.modules_data && !documentHTML) {
+      console.log('[PQREdit] 从表单数据生成HTML...')
+
+      // 如果有模板，使用模板的module_instances
+      // 如果没有模板，从modules_data重建module_instances
+      let moduleInstances = template?.module_instances
+
+      if (!moduleInstances) {
+        console.log('[PQREdit] 模板不存在，从modules_data重建module_instances')
+        moduleInstances = Object.entries(pqrData.modules_data).map(([instanceId, content]: [string, any]) => ({
+          instanceId,
+          moduleId: content.moduleId,
+          customName: content.customName || '',
+          rowIndex: content.rowIndex || 0,
+          columnIndex: content.columnIndex || 0,
+          order: 0,
+        }))
+      }
+
+      const html = convertModulesToTipTapHTML(
+        moduleInstances,
+        pqrData.modules_data,
+        {
+          title: pqrData.title || '',
+          number: pqrData.pqr_number || '',
+          revision: pqrData.revision || 'A'
+        },
+        'pqr'
+      )
+      console.log('[PQREdit] 生成的HTML长度:', html?.length || 0)
+      setDocumentHTML(html)
+    }
+  }, [template, pqrData, documentHTML, loading])
 
   // 处理保存
   const handleSave = async () => {
@@ -317,22 +373,146 @@ const PQREdit: React.FC = () => {
   }
 
   // 导出为Word
-  const handleExportWord = async () => {
+  const handleExportWord = async (style: string = 'blue_white') => {
     try {
-      message.info('Word导出功能开发中...')
-    } catch (error: any) {
+      message.loading('正在生成Word文档...', 0)
+
+      const response = await fetch(`/api/v1/pqr/${id}/export/word?style=${style}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('导出失败')
+      }
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `PQR_${pqrData?.pqr_number}_${new Date().toISOString().split('T')[0]}.docx`
+      link.click()
+      URL.revokeObjectURL(url)
+
+      message.destroy()
+      message.success('导出成功')
+    } catch (error) {
+      message.destroy()
+      message.error('导出失败，请稍后重试')
       console.error('导出Word失败:', error)
-      message.error('导出Word失败')
     }
   }
 
-  // 导出为PDF
+  // 导出为PDF - 使用浏览器打印功能
   const handleExportPDF = async () => {
     try {
-      message.info('PDF导出功能开发中...')
-    } catch (error: any) {
+      // 先保存当前内容（如果在文档编辑模式）
+      if (editMode === 'document' && documentHTML) {
+        message.loading('正在保存文档...', 0)
+        await handleSaveDocument(documentHTML)
+        message.destroy()
+      }
+
+      // 打开打印预览窗口
+      const printWindow = window.open('', '_blank')
+      if (!printWindow) {
+        message.error('无法打开打印窗口，请检查浏览器弹窗设置')
+        return
+      }
+
+      // 生成打印页面HTML
+      const printHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>PQR-${pqrData?.pqr_number}</title>
+          <style>
+            @page {
+              size: A4;
+              margin: 2cm;
+            }
+            body {
+              font-family: 'Microsoft YaHei', Arial, sans-serif;
+              line-height: 1.6;
+              color: #333;
+              max-width: 21cm;
+              margin: 0 auto;
+              padding: 20px;
+            }
+            h1 {
+              text-align: center;
+              color: #1890ff;
+              margin-bottom: 10px;
+            }
+            h2, h3 {
+              color: #1890ff;
+              margin-top: 20px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin: 20px 0;
+              page-break-inside: avoid;
+            }
+            table, th, td {
+              border: 1px solid #ddd;
+            }
+            th, td {
+              padding: 8px;
+              text-align: left;
+            }
+            th {
+              background-color: #f0f0f0;
+              font-weight: bold;
+            }
+            hr {
+              border: none;
+              border-top: 2px solid #ddd;
+              margin: 20px 0;
+            }
+            .footer {
+              margin-top: 40px;
+              text-align: center;
+              font-size: 12px;
+              color: #999;
+            }
+            @media print {
+              body {
+                padding: 0;
+              }
+              .no-print {
+                display: none;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          ${documentHTML || '<p>文档内容为空</p>'}
+          <div class="footer">
+            <p>打印日期: ${new Date().toLocaleString('zh-CN')}</p>
+          </div>
+          <div class="no-print" style="position: fixed; top: 20px; right: 20px;">
+            <button onclick="window.print()" style="padding: 10px 20px; background: #1890ff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
+              打印/保存为PDF
+            </button>
+            <button onclick="window.close()" style="padding: 10px 20px; background: #999; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; margin-left: 10px;">
+              关闭
+            </button>
+          </div>
+        </body>
+        </html>
+      `
+
+      printWindow.document.write(printHTML)
+      printWindow.document.close()
+
+      message.success('已打开打印预览窗口，请使用浏览器的"打印"功能保存为PDF')
+    } catch (error) {
+      message.error('打开打印预览失败')
       console.error('导出PDF失败:', error)
-      message.error('导出PDF失败')
     }
   }
 

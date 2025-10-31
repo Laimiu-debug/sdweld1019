@@ -11,10 +11,10 @@ import { TableCell } from '@tiptap/extension-table-cell'
 import { TableHeader } from '@tiptap/extension-table-header'
 import { Image } from '@tiptap/extension-image'
 import { TextAlign } from '@tiptap/extension-text-align'
-import { Underline } from '@tiptap/extension-underline'
 import { TextStyle } from '@tiptap/extension-text-style'
 import { Color } from '@tiptap/extension-color'
-import { Button, Space, Divider, Tooltip, message } from 'antd'
+import { Button, Space, Divider, Tooltip, message, Dropdown } from 'antd'
+import type { MenuProps } from 'antd'
 import {
   BoldOutlined,
   ItalicOutlined,
@@ -36,9 +36,9 @@ import './DocumentEditor.css'
 
 interface WPSDocumentEditorProps {
   initialContent: string
-  onSave: (content: string) => void
-  onExportWord: () => void
-  onExportPDF: () => void
+  onSave: (content: string) => Promise<void> | void
+  onExportWord?: (style?: string) => void
+  onExportPDF?: () => void
 }
 
 const WPSDocumentEditor: React.FC<WPSDocumentEditorProps> = ({
@@ -47,6 +47,9 @@ const WPSDocumentEditor: React.FC<WPSDocumentEditorProps> = ({
   onExportWord,
   onExportPDF,
 }) => {
+  console.log('[WPSDocumentEditor] 初始化，initialContent长度:', initialContent?.length || 0)
+  console.log('[WPSDocumentEditor] initialContent内容:', initialContent?.substring(0, 200))
+
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -56,11 +59,20 @@ const WPSDocumentEditor: React.FC<WPSDocumentEditorProps> = ({
       TableRow,
       TableHeader,
       TableCell,
-      Image,
+      Image.configure({
+        inline: true,
+        allowBase64: true,  // 明确允许 base64 图片
+        HTMLAttributes: {
+          loading: 'lazy',
+          style: 'max-width: 100%; height: auto;'
+        },
+        renderHTML({ HTMLAttributes }) {
+          return ['img', { ...HTMLAttributes, loading: 'lazy' }]
+        },
+      }),
       TextAlign.configure({
         types: ['heading', 'paragraph'],
       }),
-      Underline,
       TextStyle,
       Color,
     ],
@@ -74,11 +86,63 @@ const WPSDocumentEditor: React.FC<WPSDocumentEditorProps> = ({
 
   // 当initialContent变化时更新编辑器内容
   useEffect(() => {
+    console.log('[WPSDocumentEditor] useEffect触发，检查是否需要更新内容:', {
+      hasEditor: !!editor,
+      hasInitialContent: !!initialContent,
+      initialContentLength: initialContent?.length || 0
+    })
+
+    // 检查HTML中是否包含图片
+    if (initialContent) {
+      const imgMatches = initialContent.match(/<img[^>]*>/g)
+      console.log('[WPSDocumentEditor] HTML中的图片标签数量:', imgMatches?.length || 0)
+      if (imgMatches && imgMatches.length > 0) {
+        console.log('[WPSDocumentEditor] 图片标签示例:', imgMatches[0].substring(0, 200))
+        // 验证每个图片的src
+        imgMatches.forEach((imgTag, index) => {
+          const srcMatch = imgTag.match(/src="([^"]*)"/)
+          if (srcMatch) {
+            const src = srcMatch[1]
+            console.log(`[WPSDocumentEditor] 图片${index + 1} src长度:`, src.length)
+            if (src.startsWith('data:image')) {
+              const [header, base64Data] = src.split(',')
+              console.log(`[WPSDocumentEditor] 图片${index + 1} base64数据长度:`, base64Data?.length || 0)
+              if (!base64Data || base64Data.length === 0) {
+                console.warn(`[WPSDocumentEditor] 图片${index + 1} base64数据为空`)
+              }
+            }
+          } else {
+            console.warn(`[WPSDocumentEditor] 图片${index + 1} 没有src属性`)
+          }
+        })
+      }
+    }
+
     if (editor && initialContent) {
-      // 只在内容不同时更新，避免不必要的重渲染
       const currentContent = editor.getHTML()
-      if (currentContent !== initialContent) {
+      const currentLength = currentContent?.length || 0
+      const initialLength = initialContent?.length || 0
+
+      console.log('[WPSDocumentEditor] 当前内容长度:', currentLength)
+      console.log('[WPSDocumentEditor] 初始内容长度:', initialLength)
+
+      // 只在编辑器为空或内容长度差异超过10%时更新
+      // 这样可以避免因为TipTap格式化导致的微小差异而无限循环
+      const isEmpty = currentLength < 50
+      const lengthDiff = Math.abs(currentLength - initialLength)
+      const shouldUpdate = isEmpty || lengthDiff > initialLength * 0.1
+
+      console.log('[WPSDocumentEditor] 是否需要更新:', {
+        isEmpty,
+        lengthDiff,
+        shouldUpdate
+      })
+
+      if (shouldUpdate) {
+        console.log('[WPSDocumentEditor] 更新编辑器内容')
         editor.commands.setContent(initialContent)
+      } else {
+        console.log('[WPSDocumentEditor] 内容相似，跳过更新')
       }
     }
   }, [editor, initialContent])
@@ -87,9 +151,72 @@ const WPSDocumentEditor: React.FC<WPSDocumentEditorProps> = ({
     return null
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const content = editor.getHTML()
-    onSave(content)
+    await onSave(content)
+  }
+
+  const handleExportWord = async (style: string = 'blue_white') => {
+    try {
+      // 先保存当前内容
+      message.loading({ content: '正在保存文档...', key: 'export' })
+      const content = editor.getHTML()
+      await onSave(content)
+
+      // 等待一小段时间确保保存完成
+      await new Promise(resolve => setTimeout(resolve, 500))
+
+      // 然后导出
+      message.loading({ content: '正在导出Word...', key: 'export' })
+      if (onExportWord) {
+        onExportWord(style)
+      }
+      message.destroy('export')
+    } catch (error) {
+      message.error('导出失败')
+      console.error('导出Word失败:', error)
+    }
+  }
+
+  // 导出Word菜单项
+  const exportWordMenuItems: MenuProps['items'] = [
+    {
+      key: 'blue_white',
+      label: '蓝白相间风格',
+      onClick: () => handleExportWord('blue_white'),
+    },
+    {
+      key: 'plain',
+      label: '纯白风格',
+      onClick: () => handleExportWord('plain'),
+    },
+    {
+      key: 'classic',
+      label: '经典风格',
+      onClick: () => handleExportWord('classic'),
+    },
+  ]
+
+  const handleExportPDF = async () => {
+    try {
+      // 先保存当前内容
+      message.loading({ content: '正在保存文档...', key: 'export' })
+      const content = editor.getHTML()
+      await onSave(content)
+
+      // 等待一小段时间确保保存完成
+      await new Promise(resolve => setTimeout(resolve, 500))
+
+      // 然后导出
+      message.loading({ content: '正在导出PDF...', key: 'export' })
+      if (onExportPDF) {
+        onExportPDF()
+      }
+      message.destroy('export')
+    } catch (error) {
+      message.error('导出失败')
+      console.error('导出PDF失败:', error)
+    }
   }
 
   const handlePrint = () => {
@@ -117,13 +244,13 @@ const WPSDocumentEditor: React.FC<WPSDocumentEditorProps> = ({
               保存
             </Button>
           </Tooltip>
-          <Tooltip title="导出Word">
-            <Button icon={<FileWordOutlined />} onClick={onExportWord}>
+          <Dropdown menu={{ items: exportWordMenuItems }} placement="bottomLeft">
+            <Button icon={<FileWordOutlined />}>
               导出Word
             </Button>
-          </Tooltip>
+          </Dropdown>
           <Tooltip title="导出PDF">
-            <Button icon={<FilePdfOutlined />} onClick={onExportPDF}>
+            <Button icon={<FilePdfOutlined />} onClick={handleExportPDF}>
               导出PDF
             </Button>
           </Tooltip>

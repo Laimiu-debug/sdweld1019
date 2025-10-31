@@ -118,6 +118,9 @@ class PPQRUpdate(BaseModel):
     reviewed_by: Optional[int] = Field(None, description="审核人ID")
     approved_by: Optional[int] = Field(None, description="批准人ID")
 
+    # 文档编辑模式
+    document_html: Optional[str] = Field(None, description="文档HTML内容（用于文档编辑模式）")
+
 
 class PPQRResponse(PPQRBase):
     """pPQR response schema."""

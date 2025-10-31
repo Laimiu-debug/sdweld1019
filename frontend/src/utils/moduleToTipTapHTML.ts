@@ -85,16 +85,52 @@ function generateModuleHTML(
   let html = ''
 
   const moduleData = modulesData[instance.instanceId]
-  const moduleName = instance.customName || '模块'
-
-  // 模块标题
-  html += `<h3 style="font-size: 14px; font-weight: bold; margin: 8px 0 4px 0; padding: 4px 8px; background-color: #f5f5f5; border-left: 3px solid #1890ff;">${moduleName}</h3>`
 
   // 获取模块定义
   const module = getModuleByIdAndType(moduleData?.moduleId || instance.moduleId, moduleType)
 
+  // 优先使用customName，其次使用模块定义的name，最后使用默认值
+  const moduleName = instance.customName || moduleData?.customName || module?.name || '模块'
+
+  // 模块标题
+  html += `<h3 style="font-size: 14px; font-weight: bold; margin: 8px 0 4px 0; padding: 4px 8px; background-color: #f5f5f5; border-left: 3px solid #1890ff;">${moduleName}</h3>`
+
   if (!module || !module.fields) {
     html += `<p style="color: #999; font-size: 12px; padding: 8px;">模块定义未找到</p>`
+    return html
+  }
+
+  // 特殊处理：焊接接头示意图生成器 V4 - 只显示生成的图片
+  if (module.id === 'weld_joint_diagram_v4') {
+    const generatedDiagram = moduleData?.data?.generated_diagram
+    if (generatedDiagram && Array.isArray(generatedDiagram) && generatedDiagram.length > 0) {
+      html += `<div style="text-align: center; padding: 16px; ${addBottomMargin ? 'margin-bottom: 16px;' : ''}">`
+      generatedDiagram.forEach((img, index) => {
+        const imgSrc = img.url || img.thumbUrl || ''
+        console.log(`[generateModuleHTML] V4示意图图片${index}:`, imgSrc.substring(0, 100))
+
+        if (imgSrc) {
+          // 验证base64图片数据完整性
+          if (imgSrc.startsWith('data:image')) {
+            const [header, base64Data] = imgSrc.split(',')
+            if (!base64Data || base64Data.length === 0) {
+              console.warn(`[generateModuleHTML] V4示意图${index} base64数据不完整`)
+              html += `<div style="color: #999; font-size: 12px; margin: 8px 0;">示意图${index + 1}数据不完整</div>`
+            } else {
+              html += `<img src="${imgSrc}" style="max-width: 100%; height: auto; border: 1px solid #e0e0e0; border-radius: 4px; margin: 8px 0;" alt="${img.name || `焊接接头示意图${index + 1}`}" onerror="console.error('V4示意图图片加载失败:', this.src);" />`
+            }
+          } else {
+            html += `<img src="${imgSrc}" style="max-width: 100%; height: auto; border: 1px solid #e0e0e0; border-radius: 4px; margin: 8px 0;" alt="${img.name || `焊接接头示意图${index + 1}`}" onerror="console.error('V4示意图图片加载失败:', this.src);" />`
+          }
+        } else {
+          console.warn(`[generateModuleHTML] V4示意图${index}没有URL`)
+          html += `<div style="color: #999; font-size: 12px; margin: 8px 0;">示意图${index + 1}缺失</div>`
+        }
+      })
+      html += `</div>`
+    } else {
+      html += `<p style="color: #999; font-size: 12px; padding: 8px; text-align: center; ${addBottomMargin ? 'margin-bottom: 16px;' : ''}">暂无示意图</p>`
+    }
     return html
   }
 
@@ -131,13 +167,33 @@ function generateModuleHTML(
  */
 const formatFieldValue = (value: any, fieldDef?: any): string => {
   if (value === null || value === undefined || value === '') return '-'
-  
+
   // 图片字段
   if (fieldDef?.type === 'image' && Array.isArray(value)) {
     if (value.length === 0) return '-'
-    return value.map(img => 
-      `<img src="${img.url || img.thumbUrl}" style="max-width: 300px; margin: 5px;" alt="${img.name || '图片'}" />`
-    ).join('<br />')
+
+    console.log('[formatFieldValue] 处理图片字段:', value)
+
+    return value.map((img, index) => {
+      const imgSrc = img.url || img.thumbUrl || ''
+      console.log('[formatFieldValue] 图片URL:', imgSrc.substring(0, 100))
+
+      if (!imgSrc) {
+        console.warn('[formatFieldValue] 图片没有URL:', img)
+        return `<span style="color: #999;">[图片${index + 1}URL缺失]</span>`
+      }
+
+      // 验证base64图片数据完整性
+      if (imgSrc.startsWith('data:image')) {
+        const [header, base64Data] = imgSrc.split(',')
+        if (!base64Data || base64Data.length === 0) {
+          console.warn('[formatFieldValue] base64数据不完整:', img)
+          return `<span style="color: #999;">[图片${index + 1}数据不完整]</span>`
+        }
+      }
+
+      return `<img src="${imgSrc}" style="max-width: 100%; height: auto; margin: 8px 0; border: 1px solid #e0e0e0; border-radius: 4px;" alt="${img.name || `图片${index + 1}`}" onerror="console.error('图片加载失败:', this.src);" />`
+    }).join('<br />')
   }
   
   // 表格字段（嵌套表格）

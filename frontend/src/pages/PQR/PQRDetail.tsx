@@ -34,7 +34,9 @@ import {
   ClockCircleOutlined,
   CloseCircleOutlined,
   SyncOutlined,
-  HistoryOutlined
+  HistoryOutlined,
+  FileWordOutlined,
+  FilePdfOutlined
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import pqrService from '@/services/pqr'
@@ -193,6 +195,72 @@ const PQRDetail: React.FC = () => {
     } catch (error: any) {
       console.error('复制PQR失败:', error)
       message.error(error.response?.data?.detail || '复制失败')
+    }
+  }
+
+  // 处理导出Word
+  const handleExportWord = async () => {
+    try {
+      message.loading('正在生成Word文档...', 0)
+
+      const response = await fetch(`/api/v1/pqr/${id}/export/word`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('导出失败')
+      }
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `PQR_${pqrData?.pqr_number}_${new Date().toISOString().split('T')[0]}.docx`
+      link.click()
+      URL.revokeObjectURL(url)
+
+      message.destroy()
+      message.success('导出成功')
+    } catch (error) {
+      message.destroy()
+      message.error('导出失败，请稍后重试')
+      console.error('导出Word失败:', error)
+    }
+  }
+
+  // 处理导出PDF
+  const handleExportPDF = async () => {
+    try {
+      message.loading('正在生成PDF文档...', 0)
+
+      const response = await fetch(`/api/v1/pqr/${id}/export/pdf`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('导出失败')
+      }
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `PQR_${pqrData?.pqr_number}_${new Date().toISOString().split('T')[0]}.pdf`
+      link.click()
+      URL.revokeObjectURL(url)
+
+      message.destroy()
+      message.success('导出成功')
+    } catch (error) {
+      message.destroy()
+      message.error('导出失败，请稍后重试')
+      console.error('导出PDF失败:', error)
     }
   }
 
@@ -488,8 +556,11 @@ const PQRDetail: React.FC = () => {
           <Button icon={<CopyOutlined />} onClick={handleCopy} size="large">
             复制 PQR
           </Button>
-          <Button icon={<DownloadOutlined />} size="large">
-            下载 PDF
+          <Button icon={<FileWordOutlined />} onClick={handleExportWord} size="large">
+            导出 Word
+          </Button>
+          <Button icon={<FilePdfOutlined />} onClick={handleExportPDF} size="large">
+            导出 PDF
           </Button>
 
           {/* 审批按钮 */}

@@ -36,7 +36,9 @@ import {
   SyncOutlined,
   SwapOutlined,
   BarChartOutlined,
-  HistoryOutlined
+  HistoryOutlined,
+  FileWordOutlined,
+  FilePdfOutlined
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import ppqrService from '@/services/ppqr'
@@ -207,23 +209,69 @@ const PPQRDetail: React.FC = () => {
     }
   }
 
+  // 处理导出Word
+  const handleExportWord = async () => {
+    try {
+      message.loading('正在生成Word文档...', 0)
+
+      const response = await fetch(`/api/v1/ppqr/${id}/export/word`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('导出失败')
+      }
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `pPQR_${ppqrData?.ppqr_number}_${new Date().toISOString().split('T')[0]}.docx`
+      link.click()
+      URL.revokeObjectURL(url)
+
+      message.destroy()
+      message.success('导出成功')
+    } catch (error) {
+      message.destroy()
+      message.error('导出失败，请稍后重试')
+      console.error('导出Word失败:', error)
+    }
+  }
+
   // 处理导出PDF
   const handleExportPDF = async () => {
-    if (!ppqrData) return
     try {
-      const blob = await ppqrService.exportPDF(ppqrData.id)
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${ppqrData.ppqr_number}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
+      message.loading('正在生成PDF文档...', 0)
+
+      const response = await fetch(`/api/v1/ppqr/${id}/export/pdf`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('导出失败')
+      }
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `pPQR_${ppqrData?.ppqr_number}_${new Date().toISOString().split('T')[0]}.pdf`
+      link.click()
+      URL.revokeObjectURL(url)
+
+      message.destroy()
       message.success('导出成功')
-    } catch (error: any) {
+    } catch (error) {
+      message.destroy()
+      message.error('导出失败，请稍后重试')
       console.error('导出PDF失败:', error)
-      message.error(error.response?.data?.detail || '导出失败')
     }
   }
 
@@ -366,71 +414,6 @@ const PPQRDetail: React.FC = () => {
         </Space>
       </div>
 
-      {/* 审批历史 */}
-      {ppqrData.approval_instance_id && (
-        <Card
-          title={
-            <Space>
-              <HistoryOutlined />
-              <Text strong>审批历史</Text>
-            </Space>
-          }
-          style={{ marginBottom: 16 }}
-        >
-          <ApprovalHistory instanceId={ppqrData.approval_instance_id} />
-        </Card>
-      )}
-
-      {/* 操作按钮 */}
-      <Card style={{ marginBottom: '16px' }}>
-        <Space wrap>
-          <Button
-            type="primary"
-            icon={<EditOutlined />}
-            onClick={handleEdit}
-          >
-            编辑
-          </Button>
-          <Button
-            icon={<CopyOutlined />}
-            onClick={handleCopy}
-          >
-            复制
-          </Button>
-          <Button
-            icon={<DownloadOutlined />}
-            onClick={handleExportPDF}
-          >
-            导出PDF
-          </Button>
-          {ppqrData.convert_to_pqr !== 'yes' && (
-            <Button
-              icon={<SwapOutlined />}
-              onClick={handleConvertToPQR}
-            >
-              转换为PQR
-            </Button>
-          )}
-
-          {/* 审批按钮 */}
-          <ApprovalButton
-            documentType="ppqr"
-            documentId={parseInt(id || '0')}
-            documentNumber={ppqrData.ppqr_number}
-            documentTitle={ppqrData.title}
-            instanceId={ppqrData.approval_instance_id}
-            status={ppqrData.approval_status || ppqrData.status}
-            canSubmit={ppqrData.can_submit_approval || false}
-            canApprove={ppqrData.can_approve || false}
-            canCancel={ppqrData.submitter_id === user?.id}
-            onSuccess={() => {
-              // 刷新pPQR数据
-              window.location.reload()
-            }}
-          />
-        </Space>
-      </Card>
-
       {/* 基本信息卡片 */}
       <Card style={{ marginBottom: '16px' }}>
         <Descriptions title="基本信息" column={3} bordered>
@@ -467,8 +450,8 @@ const PPQRDetail: React.FC = () => {
       </Card>
 
       {/* 模块化数据展示 */}
-      {ppqrData.modules_data && Object.keys(ppqrData.modules_data).length > 0 ? (
-        <Card>
+      {ppqrData.modules_data && Object.keys(ppqrData.modules_data).length > 0 && (
+        <Card style={{ marginBottom: 16 }}>
           <Tabs
             items={Object.entries(ppqrData.modules_data).map(([instanceId, moduleContent]: [string, any]) => {
               // 获取模块定义（预设模块或自定义模块）
@@ -484,41 +467,118 @@ const PPQRDetail: React.FC = () => {
                 }
               }
 
+              // 模块名称和分类
+              const moduleName = moduleContent.customName || module?.name || moduleContent.moduleId
+              const moduleCategory = module?.category || 'basic'
+
               return {
                 key: instanceId,
                 label: (
                   <Space>
-                    {getCategoryIcon(module.category)}
-                    <Text>{moduleContent.customName || module.name}</Text>
+                    {getCategoryIcon(moduleCategory)}
+                    <Text>{moduleName}</Text>
+                    {module && (
+                      <Tag color="blue" style={{ fontSize: 11 }}>
+                        {getCategoryName(moduleCategory)}
+                      </Tag>
+                    )}
                   </Space>
                 ),
                 children: (
-                  <Row gutter={[16, 16]}>
-                    {Object.entries(moduleContent.data || {}).map(([fieldKey, value]: [string, any]) => {
-                      const fieldDef = module?.fields?.[fieldKey]
+                  <Card size="small" styles={{ body: { padding: '16px' } }}>
+                    {moduleContent.data && Object.keys(moduleContent.data).length > 0 ? (
+                      <Row gutter={[16, 16]}>
+                        {Object.entries(moduleContent.data).map(([fieldKey, value]: [string, any]) => {
+                          // 获取字段定义
+                          const fieldDef = module?.fields?.[fieldKey]
+                          const fieldLabel = fieldDef?.label || fieldKey
 
-                      return (
-                        <Col key={fieldKey} xs={24} sm={12} md={8}>
-                          <div style={{ marginBottom: '8px' }}>
-                            <Text strong>{fieldDef?.label || fieldKey}</Text>
-                          </div>
-                          <div>
-                            {renderFieldValue(fieldKey, value, fieldDef)}
-                          </div>
-                        </Col>
-                      )
-                    })}
-                  </Row>
-                )
+                          return (
+                            <Col key={fieldKey} xs={24} sm={12} md={8}>
+                              <div style={{ marginBottom: 8 }}>
+                                <Text strong style={{ fontSize: 13 }}>
+                                  {fieldLabel}
+                                  {fieldDef?.required && <Text type="danger"> *</Text>}
+                                  {fieldDef?.unit && (
+                                    <Text type="secondary" style={{ fontSize: 11, marginLeft: 4 }}>
+                                      ({fieldDef.unit})
+                                    </Text>
+                                  )}
+                                </Text>
+                              </div>
+                              <div>
+                                {renderFieldValue(fieldKey, value, fieldDef)}
+                              </div>
+                            </Col>
+                          )
+                        })}
+                      </Row>
+                    ) : (
+                      <Empty description="该模块暂无数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                    )}
+                  </Card>
+                ),
               }
             })}
           />
         </Card>
-      ) : (
-        <Card>
-          <Empty description="暂无模块数据" />
+      )}
+
+      {/* 审批历史 */}
+      {ppqrData.approval_instance_id && (
+        <Card
+          title={
+            <Space>
+              <HistoryOutlined />
+              <Text strong>审批历史</Text>
+            </Space>
+          }
+          style={{ marginBottom: 16 }}
+        >
+          <ApprovalHistory instanceId={ppqrData.approval_instance_id} />
         </Card>
       )}
+
+      {/* 操作按钮 */}
+      <Card>
+        <Space size="middle">
+          <Button type="primary" icon={<EditOutlined />} onClick={handleEdit} size="large">
+            编辑 pPQR
+          </Button>
+          <Button icon={<CopyOutlined />} onClick={handleCopy} size="large">
+            复制 pPQR
+          </Button>
+          <Button icon={<FileWordOutlined />} onClick={handleExportWord} size="large">
+            导出 Word
+          </Button>
+          <Button icon={<FilePdfOutlined />} onClick={handleExportPDF} size="large">
+            导出 PDF
+          </Button>
+          {ppqrData.convert_to_pqr !== 'yes' && (
+            <Button icon={<SwapOutlined />} onClick={handleConvertToPQR} size="large">
+              转换为 PQR
+            </Button>
+          )}
+
+          {/* 审批按钮 */}
+          <ApprovalButton
+            documentType="ppqr"
+            documentId={parseInt(id || '0')}
+            documentNumber={ppqrData.ppqr_number}
+            documentTitle={ppqrData.title}
+            instanceId={ppqrData.approval_instance_id}
+            status={ppqrData.approval_status || ppqrData.status}
+            canSubmit={ppqrData.can_submit_approval || false}
+            canApprove={ppqrData.can_approve || false}
+            canCancel={ppqrData.submitter_id === user?.id}
+            onSuccess={() => {
+              // 刷新pPQR数据
+              window.location.reload()
+            }}
+            size="large"
+          />
+        </Space>
+      </Card>
     </div>
   )
 }

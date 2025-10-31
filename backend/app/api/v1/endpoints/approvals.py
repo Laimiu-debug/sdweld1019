@@ -123,8 +123,8 @@ async def submit_for_approval(
                 document_number = pqr.pqr_number
                 document_title = pqr.title
         elif request.document_type == 'ppqr':
-            from app.models.ppqr import pPQR
-            ppqr = db.query(pPQR).filter(pPQR.id == request.document_ids[0]).first()
+            from app.models.ppqr import PPQR
+            ppqr = db.query(PPQR).filter(PPQR.id == request.document_ids[0]).first()
             if ppqr:
                 document_number = ppqr.ppqr_number
                 document_title = ppqr.title

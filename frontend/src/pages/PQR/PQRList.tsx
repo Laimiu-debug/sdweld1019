@@ -32,6 +32,7 @@ import {
   CopyOutlined,
   FilePdfOutlined,
   FileExcelOutlined,
+  FileWordOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
   ClockCircleOutlined,
@@ -107,19 +108,157 @@ const PQRList: React.FC = () => {
     },
   })
 
-  // 导出PDF
-  const handleExportPDF = async (id: number, title: string) => {
+  // 导出Word
+  const handleExportWord = async (id: number, pqr_number: string) => {
     try {
-      const blob = await pqrService.exportPDF(id)
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${title}.pdf`
-      a.click()
-      window.URL.revokeObjectURL(url)
-      message.success('导出PDF成功')
+      message.loading('正在生成Word文档...', 0)
+
+      const response = await fetch(`/api/v1/pqr/${id}/export/word`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('导出失败')
+      }
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `PQR_${pqr_number}_${new Date().toISOString().split('T')[0]}.docx`
+      link.click()
+      URL.revokeObjectURL(url)
+
+      message.destroy()
+      message.success('导出成功')
     } catch (error) {
-      message.error('导出PDF失败')
+      message.destroy()
+      message.error('导出失败，请稍后重试')
+      console.error('导出Word失败:', error)
+    }
+  }
+
+  // 导出PDF - 使用浏览器打印功能
+  const handleExportPDF = async (id: number, pqr_number: string) => {
+    try {
+      message.loading('正在获取文档内容...', 0)
+
+      // 获取PQR详情（包含document_html）
+      const response = await fetch(`/api/v1/pqr/${id}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('获取文档失败')
+      }
+
+      const pqrData = await response.json()
+      message.destroy()
+
+      // 打开打印预览窗口
+      const printWindow = window.open('', '_blank')
+      if (!printWindow) {
+        message.error('无法打开打印窗口，请检查浏览器弹窗设置')
+        return
+      }
+
+      // 生成打印页面HTML
+      const printHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>PQR-${pqr_number}</title>
+          <style>
+            @page {
+              size: A4;
+              margin: 2cm;
+            }
+            body {
+              font-family: 'Microsoft YaHei', Arial, sans-serif;
+              line-height: 1.6;
+              color: #333;
+              max-width: 21cm;
+              margin: 0 auto;
+              padding: 20px;
+            }
+            h1 {
+              text-align: center;
+              color: #1890ff;
+              margin-bottom: 10px;
+            }
+            h2, h3 {
+              color: #1890ff;
+              margin-top: 20px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin: 20px 0;
+              page-break-inside: avoid;
+            }
+            table, th, td {
+              border: 1px solid #ddd;
+            }
+            th, td {
+              padding: 8px;
+              text-align: left;
+            }
+            th {
+              background-color: #f0f0f0;
+              font-weight: bold;
+            }
+            hr {
+              border: none;
+              border-top: 2px solid #ddd;
+              margin: 20px 0;
+            }
+            .footer {
+              margin-top: 40px;
+              text-align: center;
+              font-size: 12px;
+              color: #999;
+            }
+            @media print {
+              body {
+                padding: 0;
+              }
+              .no-print {
+                display: none;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          ${pqrData.document_html || '<p>文档内容为空，请先在编辑页面使用文档编辑模式编辑内容</p>'}
+          <div class="footer">
+            <p>打印日期: ${new Date().toLocaleString('zh-CN')}</p>
+          </div>
+          <div class="no-print" style="position: fixed; top: 20px; right: 20px;">
+            <button onclick="window.print()" style="padding: 10px 20px; background: #1890ff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
+              打印/保存为PDF
+            </button>
+            <button onclick="window.close()" style="padding: 10px 20px; background: #999; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; margin-left: 10px;">
+              关闭
+            </button>
+          </div>
+        </body>
+        </html>
+      `
+
+      printWindow.document.write(printHTML)
+      printWindow.document.close()
+
+      message.success('已打开打印预览窗口，请使用浏览器的"打印"功能保存为PDF')
+    } catch (error) {
+      message.destroy()
+      message.error('打开打印预览失败')
+      console.error('导出PDF失败:', error)
     }
   }
 
@@ -363,11 +502,21 @@ const PQRList: React.FC = () => {
               </Button>
             </Tooltip>
 
+            <Tooltip title="导出Word">
+              <Button
+                icon={<FileWordOutlined />}
+                size="small"
+                onClick={() => handleExportWord(record.id, record.pqr_number)}
+              >
+                Word
+              </Button>
+            </Tooltip>
+
             <Tooltip title="导出PDF">
               <Button
                 icon={<FilePdfOutlined />}
                 size="small"
-                onClick={() => handleExportPDF(record.id, record.title)}
+                onClick={() => handleExportPDF(record.id, record.pqr_number)}
               >
                 PDF
               </Button>

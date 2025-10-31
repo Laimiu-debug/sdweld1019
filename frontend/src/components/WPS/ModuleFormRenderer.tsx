@@ -216,6 +216,26 @@ const ModuleFormRenderer: React.FC<ModuleFormRendererProps> = ({
           )
         }
 
+        // 检查是否是焊接接头示意图V4字段
+        const isWeldJointV4Diagram = fieldKey === 'generated_diagram' || field.label.includes('焊接接头示意图V4')
+
+        if (isWeldJointV4Diagram) {
+          return (
+            <Form.Item
+              key={fieldName}
+              name={fieldName}
+              label={field.label}
+              rules={field.required ? [{ required: true, message: `请上传${field.label}` }] : []}
+            >
+              <WeldJointDiagramV4Field
+                label={field.label}
+                disabled={field.readonly}
+                formValues={{}}
+              />
+            </Form.Item>
+          )
+        }
+
         // 普通图片字段
         return (
           <Form.Item
