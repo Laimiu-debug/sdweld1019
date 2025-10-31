@@ -92,6 +92,44 @@ main() {
     check_command docker-compose
     print_success "系统环境检查通过"
 
+    # 1.5. 检查并配置加速（首次部署时）
+    if [ "$DEPLOY_MODE" == "full" ]; then
+        print_info "检查 Docker 镜像加速配置..."
+        if ! docker info 2>/dev/null | grep -q "Registry Mirrors"; then
+            print_warning "未检测到 Docker 镜像加速配置"
+            print_info "建议配置镜像加速以提升下载速度"
+            read -p "是否现在配置镜像加速？(y/n): " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                if [ -f "服务器加速配置.sh" ]; then
+                    print_info "运行加速配置脚本..."
+                    chmod +x 服务器加速配置.sh
+                    ./服务器加速配置.sh
+                    print_success "加速配置完成"
+                else
+                    print_warning "未找到加速配置脚本，手动配置镜像加速..."
+                    mkdir -p /etc/docker
+                    cat > /etc/docker/daemon.json <<EOF
+{
+  "registry-mirrors": [
+    "https://docker.mirrors.ustc.edu.cn",
+    "https://mirror.ccs.tencentyun.com",
+    "https://registry.docker-cn.com"
+  ]
+}
+EOF
+                    systemctl daemon-reload
+                    systemctl restart docker
+                    print_success "Docker 镜像加速已配置"
+                fi
+            else
+                print_warning "跳过镜像加速配置，构建可能较慢"
+            fi
+        else
+            print_success "Docker 镜像加速已配置"
+        fi
+    fi
+
     # 2. 检查配置文件
     print_info "检查配置文件..."
     if [ ! -f "backend/.env.production" ]; then

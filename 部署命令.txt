@@ -1,0 +1,87 @@
+========================================
+部署命令速查表
+========================================
+
+📌 如果还没有Git仓库，先执行这些命令：
+========================================
+
+git init
+git add .
+git commit -m "Initial commit - Ready for deployment"
+git remote add origin <你的仓库地址>
+git branch -M main
+git push -u origin main
+
+
+🚀 首次部署（推荐）
+========================================
+
+.\首次部署到服务器.ps1
+
+
+🔄 后续更新代码
+========================================
+
+.\更新服务器代码.ps1
+
+
+🛠️ 常用管理命令
+========================================
+
+# 查看服务状态
+ssh -i server-key.pem root@43.142.188.252 "su - ubuntu -c 'cd /home/ubuntu/sdweld && docker-compose ps'"
+
+# 查看所有日志
+ssh -i server-key.pem root@43.142.188.252 "su - ubuntu -c 'cd /home/ubuntu/sdweld && docker-compose logs -f'"
+
+# 查看后端日志
+ssh -i server-key.pem root@43.142.188.252 "su - ubuntu -c 'cd /home/ubuntu/sdweld && docker-compose logs -f backend'"
+
+# 查看前端日志
+ssh -i server-key.pem root@43.142.188.252 "su - ubuntu -c 'cd /home/ubuntu/sdweld && docker-compose logs -f frontend'"
+
+# 重启所有服务
+ssh -i server-key.pem root@43.142.188.252 "su - ubuntu -c 'cd /home/ubuntu/sdweld && docker-compose restart'"
+
+# 重启后端服务
+ssh -i server-key.pem root@43.142.188.252 "su - ubuntu -c 'cd /home/ubuntu/sdweld && docker-compose restart backend'"
+
+# 停止所有服务
+ssh -i server-key.pem root@43.142.188.252 "su - ubuntu -c 'cd /home/ubuntu/sdweld && docker-compose down'"
+
+# 启动所有服务
+ssh -i server-key.pem root@43.142.188.252 "su - ubuntu -c 'cd /home/ubuntu/sdweld && docker-compose up -d'"
+
+
+🌐 访问地址
+========================================
+
+用户门户: https://sdhaohan.cn
+管理门户: https://laimiu.sdhaohan.cn
+后端API:  https://api.sdhaohan.cn
+API文档:  https://api.sdhaohan.cn/api/v1/docs
+
+
+📋 服务器信息
+========================================
+
+IP地址:   43.142.188.252
+部署用户: ubuntu
+部署目录: /home/ubuntu/sdweld
+邮箱授权码: rsheuhkrdlqpecij (已配置)
+
+
+❓ 遇到问题？
+========================================
+
+1. 无法运行脚本：
+   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+2. 查看详细文档：
+   - 现在就开始部署.md
+   - README-部署说明.md
+   - Git部署到普通目录.md
+
+
+========================================
+
