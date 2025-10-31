@@ -95,25 +95,16 @@ function Main {
         Write-Info "You may need to push manually later"
     }
     
-    # 3. Create SSH Key
-    Write-Header "Step 3: Setup SSH Key"
-    
-    if (-not (Test-Path $SSH_KEY_FILE)) {
-        Write-Info "Creating SSH key file..."
-        $sshKey = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDcOr08lnUObi+djGnoalQpZ+6MgRuhH9BXB2k4g/sAOYeqs/y4xzcmDsdqF3Www8f0OwEmaII39kLTh0iucu4GS0G8aSKqD9gw4cQ9msH2cWk9EKH9jQyiASUOh/uZy7mhg145WAP+fUQ9HMU4D1oavdUnGCr5xyVyc9cgFjKcQizXTVPqR0KqdF7r8D2q9vV+25CCwWtwOtY8gAGLafsPT/BTs8Av9PbCIU7iCuad6kq/N0/n/g5q5+eohumpIaD/6OaT4NhWo4+ClC4iKEVqvykTiV6XuJUL+8KahJD/0+tTfw2UhQzIwEE7JVU+x776Fb8YKvapjZOFzZWxIaTf skey-o3j71l2x"
-        $sshKey | Out-File -FilePath $SSH_KEY_FILE -Encoding ASCII -NoNewline
-        Write-Success "SSH key created"
-    } else {
-        Write-Info "SSH key already exists"
-    }
-    
-    # 4. Test SSH Connection
-    Write-Header "Step 4: Test SSH Connection"
-    
+    # 3. Test SSH Connection
+    Write-Header "Step 3: Test SSH Connection"
+
     Write-Info "Testing SSH connection..."
+    Write-Warning-Custom "Please enter the server password when prompted"
+    Write-Host ""
+
     $testCmd = "echo 'OK'"
-    $testResult = ssh -i $SSH_KEY_FILE -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${SERVER_USER}@${SERVER_IP} $testCmd 2>&1
-    
+    $testResult = ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${SERVER_USER}@${SERVER_IP} $testCmd 2>&1
+
     if ($LASTEXITCODE -eq 0) {
         Write-Success "SSH connection successful"
     } else {
@@ -121,15 +112,17 @@ function Main {
         Write-Info "Please check:"
         Write-Host "  1. Server IP is correct" -ForegroundColor Yellow
         Write-Host "  2. Security group allows port 22" -ForegroundColor Yellow
-        Write-Host "  3. SSH key is correct" -ForegroundColor Yellow
+        Write-Host "  3. Password is correct" -ForegroundColor Yellow
         exit 1
     }
     
-    # 5. Setup Server Environment
-    Write-Header "Step 5: Setup Server Environment"
-    
+    # 4. Setup Server Environment
+    Write-Header "Step 4: Setup Server Environment"
+
     Write-Info "Creating ubuntu user and configuring permissions..."
-    
+    Write-Warning-Custom "Please enter password if prompted"
+    Write-Host ""
+
     $setupScript = @'
 # Check ubuntu user
 if ! id ubuntu &>/dev/null; then
@@ -162,18 +155,19 @@ usermod -aG sudo ubuntu
 
 echo "Environment setup complete"
 '@
-    
-    ssh -i $SSH_KEY_FILE -o StrictHostKeyChecking=no ${SERVER_USER}@${SERVER_IP} $setupScript
-    
+
+    ssh -o StrictHostKeyChecking=no ${SERVER_USER}@${SERVER_IP} $setupScript
+
     Write-Success "Server environment configured"
     
-    # 6. Clone Code
-    Write-Header "Step 6: Clone Code to Server"
-    
+    # 5. Clone Code
+    Write-Header "Step 5: Clone Code to Server"
+
     Write-Info "Git repository: $gitRemote"
     Write-Info "Target directory: $DEPLOY_PATH"
+    Write-Warning-Custom "Please enter password if prompted"
     Write-Host ""
-    
+
     $cloneScript = @"
 su - $DEPLOY_USER -c '
     # Check if directory exists
@@ -181,11 +175,11 @@ su - $DEPLOY_USER -c '
         echo "Directory exists, backing up..."
         mv $DEPLOY_PATH ${DEPLOY_PATH}.backup.\$(date +%Y%m%d%H%M%S)
     fi
-    
+
     # Clone code
     echo "Cloning code..."
     git clone $gitRemote $DEPLOY_PATH
-    
+
     if [ \$? -eq 0 ]; then
         echo "Code cloned successfully"
         cd $DEPLOY_PATH
@@ -196,9 +190,9 @@ su - $DEPLOY_USER -c '
     fi
 '
 "@
-    
-    ssh -i $SSH_KEY_FILE -o StrictHostKeyChecking=no ${SERVER_USER}@${SERVER_IP} $cloneScript
-    
+
+    ssh -o StrictHostKeyChecking=no ${SERVER_USER}@${SERVER_IP} $cloneScript
+
     if ($LASTEXITCODE -eq 0) {
         Write-Success "Code cloned successfully"
     } else {
@@ -207,50 +201,52 @@ su - $DEPLOY_USER -c '
         exit 1
     }
     
-    # 7. Upload Environment Config
-    Write-Header "Step 7: Upload Environment Configuration"
-    
+    # 6. Upload Environment Config
+    Write-Header "Step 6: Upload Environment Configuration"
+
     Write-Warning-Custom "Uploading sensitive configuration files"
     Write-Info "Uploading: backend/.env.production"
+    Write-Warning-Custom "Please enter password if prompted"
     Write-Host ""
-    
+
     if (Test-Path "backend\.env.production") {
         Write-Info "Uploading backend/.env.production..."
-        scp -i $SSH_KEY_FILE -o StrictHostKeyChecking=no "backend\.env.production" ${SERVER_USER}@${SERVER_IP}:/tmp/
-        
+        scp -o StrictHostKeyChecking=no "backend\.env.production" ${SERVER_USER}@${SERVER_IP}:/tmp/
+
         $moveScript = @"
 chown ubuntu:ubuntu /tmp/.env.production
 su - $DEPLOY_USER -c 'mv /tmp/.env.production $DEPLOY_PATH/backend/.env.production'
 "@
-        
-        ssh -i $SSH_KEY_FILE -o StrictHostKeyChecking=no ${SERVER_USER}@${SERVER_IP} $moveScript
-        
+
+        ssh -o StrictHostKeyChecking=no ${SERVER_USER}@${SERVER_IP} $moveScript
+
         Write-Success "Configuration file uploaded"
     } else {
         Write-Warning-Custom "backend/.env.production not found"
         Write-Info "Please ensure QQ email authorization code is configured"
     }
     
-    # 8. Execute Deployment
-    Write-Header "Step 8: Execute Deployment"
-    
+    # 7. Execute Deployment
+    Write-Header "Step 7: Execute Deployment"
+
     Write-Warning-Custom "This may take 10-15 minutes, please be patient..."
+    Write-Warning-Custom "Please enter password if prompted"
     Write-Host ""
-    
+
     $deployScript = @"
 su - $DEPLOY_USER -c '
     cd $DEPLOY_PATH
-    
+
     # Give execute permission to script
     chmod +x deploy.sh
-    
+
     # Execute deployment
     ./deploy.sh
 '
 "@
-    
-    ssh -i $SSH_KEY_FILE -o StrictHostKeyChecking=no ${SERVER_USER}@${SERVER_IP} $deployScript
-    
+
+    ssh -o StrictHostKeyChecking=no ${SERVER_USER}@${SERVER_IP} $deployScript
+
     if ($LASTEXITCODE -eq 0) {
         Write-Success "Deployment complete"
     } else {
@@ -258,9 +254,9 @@ su - $DEPLOY_USER -c '
         Write-Info "Please check logs for details"
     }
     
-    # 9. Complete
+    # 8. Complete
     Write-Header "Deployment Complete!"
-    
+
     Write-Success "Project deployed to: $DEPLOY_PATH"
     Write-Host ""
     Write-Info "Access URLs:"
@@ -270,14 +266,13 @@ su - $DEPLOY_USER -c '
     Write-Host "  API Docs:     https://api.sdhaohan.cn/api/v1/docs" -ForegroundColor Cyan
     Write-Host ""
     Write-Info "Common Commands:"
-    Write-Host "  Check status: ssh -i $SSH_KEY_FILE ${SERVER_USER}@${SERVER_IP} 'su - $DEPLOY_USER -c `"cd $DEPLOY_PATH; docker-compose ps`"'" -ForegroundColor Gray
-    Write-Host "  View logs:    ssh -i $SSH_KEY_FILE ${SERVER_USER}@${SERVER_IP} 'su - $DEPLOY_USER -c `"cd $DEPLOY_PATH; docker-compose logs -f`"'" -ForegroundColor Gray
-    Write-Host "  Update code:  .\update-server-code.ps1" -ForegroundColor Gray
+    Write-Host "  Check status: ssh ${SERVER_USER}@${SERVER_IP} 'su - $DEPLOY_USER -c `"cd $DEPLOY_PATH && docker-compose ps`"'" -ForegroundColor Gray
+    Write-Host "  View logs:    ssh ${SERVER_USER}@${SERVER_IP} 'su - $DEPLOY_USER -c `"cd $DEPLOY_PATH && docker-compose logs -f`"'" -ForegroundColor Gray
     Write-Host ""
     Write-Warning-Custom "Important Notes:"
     Write-Host "  1. Keep backend/.env.production secure" -ForegroundColor Yellow
     Write-Host "  2. Backup database regularly" -ForegroundColor Yellow
-    Write-Host "  3. Use update-server-code.ps1 for future updates" -ForegroundColor Yellow
+    Write-Host "  3. For future updates, manually pull code and redeploy" -ForegroundColor Yellow
 }
 
 # Run Main Function
